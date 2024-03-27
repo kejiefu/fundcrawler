@@ -3,9 +3,11 @@ import time
 import requests
 import json
 import pandas as pd
+import time
+
 
 def greet(code):
-    url = 'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNNBasicInformation?deviceid=wxmp%7C49539621296d2c33e1db920d2f49fe07&version=7.5.2&product=EFund&plat=Iphone&FCODE='+code
+    url = 'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNNBasicInformation?deviceid=wxmp%7C49539621296d2c33e1db920d2f49fe07&version=7.5.2&product=EFund&plat=Iphone&FCODE=' + code
     headers = {
         'User-Agent': 'Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36 Edg/122.0.0.0'
     }
@@ -54,18 +56,51 @@ def greet(code):
 
             for item in response2Data["data"]["fundBondInvestDistri"]:
                 bond_type = int(item["BONDTYPENEW"])
-                if bond_type == 1 :
+                if bond_type == 1:
                     creditDebt = item["PCTNV"]
                 if bond_type == 2:
                     interestRateDebt = item["PCTNV"]
         except Exception as e:
             print(e)
 
-        return {'编码': fcode, '类型': ftype, '名称': shortname, '信用': creditDebt, '利率': interestRateDebt}
+        current_timestamp = time.time()
+        milliseconds = round(current_timestamp * 1000)
+
+        headers3 = {
+            "Accept": "*/*"
+        }
+
+        url3 = (
+                "https://j5.fund.eastmoney.com/sc/tfs/qt/v2.0.1/" + fcode
+                + ".json?deviceid=1234567.py.service&version=6.5.5&appVersion=6.5.5&product=EFund&plat=web&curTime="
+                + str(milliseconds)
+        )
+        response3 = requests.get(url3, headers=headers3)
+        print(response3.text)
+        response3Data = json.loads(response3.text)
+
+        # 提取 title 为 Z 和 Y 的数据
+        filtered_data = [item for item in response3Data["JDZF"]["Datas"] if item["title"] in ["Z", "Y"]]
+
+        weekValue = 0;
+        monthValue = 0;
+
+        # 打印提取的数据
+        for item in filtered_data:
+            # 周收益
+            if item["title"] == "Z":
+                weekValue = item["syl"]
+            # 月收益
+            if item["title"] == "Y":
+                monthValue = item["syl"]
+
+        return {'编码': fcode, '类型': ftype, '名称': shortname, '信用': creditDebt, '利率': interestRateDebt,
+                '周': weekValue, '月': monthValue}
 
     else:
         # 响应失败，输出错误信息
         print('Error:', response.status_code)
+
 
 code_json = '015499,007333'
 split_list = code_json.split(',')
