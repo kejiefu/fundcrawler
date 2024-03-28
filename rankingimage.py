@@ -5,6 +5,8 @@ import json
 import pandas as pd
 import time
 
+from matplotlib import pyplot as plt
+
 
 def greet(code):
     url = 'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNNBasicInformation?deviceid=wxmp%7C49539621296d2c33e1db920d2f49fe07&version=7.5.2&product=EFund&plat=Iphone&FCODE=' + code
@@ -114,10 +116,24 @@ for code in split_list:
     if data:
         data_array.append(data)
 print(data_array)
-# 创建 DataFrame 对象
-df = pd.DataFrame(data_array)
 
-# 将数据保存到 Excel 文件
-filename = 'ranking.xlsx'
-df.to_excel(filename, index=False)
-print('Data saved to', filename)
+# 通过周倒序排序
+sorted_data = sorted(data_array, key=lambda x: float(x['周']), reverse=True)
+
+# 将数组转换为Pandas DataFrame
+df = pd.DataFrame(sorted_data)
+
+# 使用matplotlib将DataFrame绘制为表格并保存为图片
+fig, ax = plt.subplots()
+ax.axis('off')
+table = ax.table(cellText=df.values, colLabels=df.columns, cellLoc='center', loc='center')
+
+# 设置全局字体属性
+plt.rcParams['font.sans-serif'] = ['SimHei']  # 替换成你系统中支持中文的字体，如黑体或宋体
+
+table.auto_set_font_size(False)
+table.set_fontsize(14)
+table.scale(1, 1.5)
+
+plt.savefig('ranking_image.png', bbox_inches='tight', dpi=300)
+plt.show()
