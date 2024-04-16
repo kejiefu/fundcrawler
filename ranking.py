@@ -4,7 +4,8 @@ import requests
 import json
 import pandas as pd
 import time
-
+import random
+from datetime import datetime
 
 def greet(code):
     url = 'https://fundmobapi.eastmoney.com/FundMNewApi/FundMNNBasicInformation?deviceid=wxmp%7C49539621296d2c33e1db920d2f49fe07&version=7.5.2&product=EFund&plat=Iphone&FCODE=' + code
@@ -23,6 +24,8 @@ def greet(code):
         json_data = json.loads(data)
         fcode = json_data['Datas']['FCODE']
         ftype = json_data['Datas']['FTYPE']
+        fsrq = json_data['Datas']['FSRQ']
+        rzdf = json_data['Datas']['RZDF']
         shortname = json_data['Datas']['SHORTNAME']
 
         url2 = "https://dgs.tiantianfunds.com/merge/m/api/jjxqy2"
@@ -82,8 +85,8 @@ def greet(code):
         # 提取 title 为 Z 和 Y 的数据
         filtered_data = [item for item in response3Data["JDZF"]["Datas"] if item["title"] in ["Z", "Y"]]
 
-        weekValue = 0;
-        monthValue = 0;
+        weekValue = 0
+        monthValue = 0
 
         # 打印提取的数据
         for item in filtered_data:
@@ -95,8 +98,14 @@ def greet(code):
                 monthValue = item["syl"]
 
         if ftype:
-            ftype = ftype.replace("债券型-","")
+            ftype = ftype.replace("债券型-", "")
+
+        date_str = fsrq
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+        formatted_date = date_obj.strftime('%m-%d')
+
         return {'编码': fcode, '类型': ftype, '名称': shortname, '信用': creditDebt, '利率': interestRateDebt,
+                formatted_date: rzdf,
                 '周': weekValue, '月': monthValue}
 
     else:
@@ -104,18 +113,27 @@ def greet(code):
         print('Error:', response.status_code)
 
 
-code_json = '015499,007333,012618,012714,008448,007332,008974,015534'
+code_json = ('015499,007333,012618,012714,008974,015534,017546,003072,007195,016482,007920,004898,'
+             '003177,016039,017460,010085,007677,008588,008449,010734,519720,015532,014570,004043,519783,011623')
 split_list = code_json.split(',')
 
 data_array = []
 for code in split_list:
     data = greet(code)
-    time.sleep(0.2)  # 休眠200毫秒
+    # 生成随机的休眠时间
+    sleep_time = random.uniform(0.2, 0.3)
+
+    # 休眠
+    time.sleep(sleep_time)  # 单位为秒，根据随机生成的时间进行休眠
     if data:
         data_array.append(data)
 print(data_array)
+
+# 通过周倒序排序
+sorted_data = sorted(data_array, key=lambda x: float(x['周']), reverse=True)
+
 # 创建 DataFrame 对象
-df = pd.DataFrame(data_array)
+df = pd.DataFrame(sorted_data)
 
 # 将数据保存到 Excel 文件
 filename = 'ranking.xlsx'
