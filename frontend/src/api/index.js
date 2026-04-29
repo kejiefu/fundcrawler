@@ -53,4 +53,13 @@ export const dashboardAPI = {
   getActivity: () => api.get('/dashboard/activity')
 }
 
+export const menusAPI = {
+  getMenus: () => api.get('/menus'),
+  getAllMenus: () => api.get('/menus/all'),
+  getMenu: (menuId) => api.get(`/menus/${menuId}`),
+  createMenu: (menuData) => api.post('/menus', menuData),
+  updateMenu: (menuId, menuData) => api.put(`/menus/${menuId}`, menuData),
+  deleteMenu: (menuId) => api.delete(`/menus/${menuId}`)
+}
+
 export default api

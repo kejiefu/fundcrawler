@@ -1,120 +1,92 @@
 <template>
-  <div class="dashboard">
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <h2>Admin Panel</h2>
+  <div>
+    <header class="top-bar">
+      <h1>User Management</h1>
+      <div class="user-info">
+        <span>Welcome, {{ user?.full_name || user?.username }}</span>
       </div>
-      <nav class="sidebar-nav">
-        <router-link to="/" class="nav-item">
-          <span class="nav-icon">📊</span>
-          <span>Dashboard</span>
-        </router-link>
-        <router-link to="/users" class="nav-item active">
-          <span class="nav-icon">👥</span>
-          <span>Users</span>
-        </router-link>
-        <router-link to="/profile" class="nav-item">
-          <span class="nav-icon">👤</span>
-          <span>Profile</span>
-        </router-link>
-      </nav>
-      <div class="sidebar-footer">
-        <button @click="handleLogout" class="logout-button">
-          <span class="nav-icon">🚪</span>
-          <span>Logout</span>
-        </button>
-      </div>
-    </aside>
+    </header>
 
-    <main class="main-content">
-      <header class="top-bar">
-        <h1>User Management</h1>
-        <div class="user-info">
-          <span>Welcome, {{ user?.full_name || user?.username }}</span>
-        </div>
-      </header>
-
-      <div class="content">
-        <div class="card">
-          <div class="card-header">
-            <h2>All Users</h2>
-          </div>
-
-          <div v-if="loading" class="loading">Loading users...</div>
-          <div v-else-if="error" class="error">{{ error }}</div>
-          <table v-else class="users-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Username</th>
-                <th>Email</th>
-                <th>Full Name</th>
-                <th>Status</th>
-                <th>Role</th>
-                <th>Created</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="userItem in users" :key="userItem.id">
-                <td>{{ userItem.id }}</td>
-                <td>{{ userItem.username }}</td>
-                <td>{{ userItem.email }}</td>
-                <td>{{ userItem.full_name || '-' }}</td>
-                <td>
-                  <span :class="['status', userItem.is_active ? 'active' : 'inactive']">
-                    {{ userItem.is_active ? 'Active' : 'Inactive' }}
-                  </span>
-                </td>
-                <td>
-                  <span :class="['role', userItem.is_superuser ? 'admin' : 'user']">
-                    {{ userItem.is_superuser ? 'Admin' : 'User' }}
-                  </span>
-                </td>
-                <td>{{ formatDate(userItem.created_at) }}</td>
-                <td>
-                  <button @click="editUser(userItem)" class="action-btn edit">Edit</button>
-                  <button
-                    v-if="!userItem.is_superuser"
-                    @click="deleteUserConfirm(userItem)"
-                    class="action-btn delete"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+    <div class="content">
+      <div class="card">
+        <div class="card-header">
+          <h2>All Users</h2>
         </div>
 
-        <div v-if="showEditModal" class="modal-overlay" @click="closeModal">
-          <div class="modal" @click.stop>
-            <h3>Edit User</h3>
-            <form @submit.prevent="saveUser">
-              <div class="form-group">
-                <label>Email</label>
-                <input v-model="editForm.email" type="email" required />
-              </div>
-              <div class="form-group">
-                <label>Full Name</label>
-                <input v-model="editForm.full_name" type="text" />
-              </div>
-              <div class="form-group">
-                <label>Active</label>
-                <select v-model="editForm.is_active">
-                  <option :value="true">Active</option>
-                  <option :value="false">Inactive</option>
-                </select>
-              </div>
-              <div class="modal-actions">
-                <button type="button" @click="closeModal" class="btn-cancel">Cancel</button>
-                <button type="submit" class="btn-save">Save</button>
-              </div>
-            </form>
-          </div>
+        <div v-if="loading" class="loading">Loading users...</div>
+        <div v-else-if="error" class="error">{{ error }}</div>
+        <table v-else class="users-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Username</th>
+              <th>Email</th>
+              <th>Full Name</th>
+              <th>Status</th>
+              <th>Role</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="userItem in users" :key="userItem.id">
+              <td>{{ userItem.id }}</td>
+              <td>{{ userItem.username }}</td>
+              <td>{{ userItem.email }}</td>
+              <td>{{ userItem.full_name || '-' }}</td>
+              <td>
+                <span :class="['status', userItem.is_active ? 'active' : 'inactive']">
+                  {{ userItem.is_active ? 'Active' : 'Inactive' }}
+                </span>
+              </td>
+              <td>
+                <span :class="['role', userItem.is_superuser ? 'admin' : 'user']">
+                  {{ userItem.is_superuser ? 'Admin' : 'User' }}
+                </span>
+              </td>
+              <td>{{ formatDate(userItem.created_at) }}</td>
+              <td>
+                <button @click="editUser(userItem)" class="action-btn edit">Edit</button>
+                <button
+                  v-if="!userItem.is_superuser"
+                  @click="deleteUserConfirm(userItem)"
+                  class="action-btn delete"
+                >
+                  Delete
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-if="showEditModal" class="modal-overlay" @click="closeModal">
+        <div class="modal" @click.stop>
+          <h3>Edit User</h3>
+          <form @submit.prevent="saveUser">
+            <div class="form-group">
+              <label>Email</label>
+              <input v-model="editForm.email" type="email" required />
+            </div>
+            <div class="form-group">
+              <label>Full Name</label>
+              <input v-model="editForm.full_name" type="text" />
+            </div>
+            <div class="form-group">
+              <label>Active</label>
+              <select v-model="editForm.is_active">
+                <option :value="true">Active</option>
+                <option :value="false">Inactive</option>
+              </select>
+            </div>
+            <div class="modal-actions">
+              <button type="button" @click="closeModal" class="btn-cancel">Cancel</button>
+              <button type="submit" class="btn-save">Save</button>
+            </div>
+          </form>
         </div>
       </div>
-    </main>
+    </div>
   </div>
 </template>
 
@@ -199,11 +171,6 @@ const closeModal = () => {
   showEditModal.value = false
 }
 
-const handleLogout = () => {
-  authStore.logout()
-  router.push('/login')
-}
-
 onMounted(() => {
   if (!authStore.isAuthenticated) {
     router.push('/login')
@@ -215,105 +182,19 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.dashboard {
-  display: flex;
-  min-height: 100vh;
-}
-
-.sidebar {
-  width: 260px;
-  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
-  color: white;
-  display: flex;
-  flex-direction: column;
-  position: fixed;
-  height: 100vh;
-}
-
-.sidebar-header {
-  padding: 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.sidebar-header h2 {
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.sidebar-nav {
-  flex: 1;
-  padding: 16px 12px;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  color: rgba(255, 255, 255, 0.7);
-  text-decoration: none;
-  border-radius: 8px;
-  margin-bottom: 4px;
-  transition: all 0.3s ease;
-}
-
-.nav-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-}
-
-.nav-item.router-link-active,
-.nav-item.active {
-  background: rgba(102, 126, 234, 0.3);
-  color: white;
-}
-
-.nav-icon {
-  font-size: 20px;
-}
-
-.sidebar-footer {
-  padding: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.logout-button {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.logout-button:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.main-content {
-  flex: 1;
-  margin-left: 260px;
-  background: #f5f5f5;
-  min-height: 100vh;
-}
-
 .top-bar {
   background: white;
   padding: 20px 32px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid #eee;
 }
 
 .top-bar h1 {
   font-size: 24px;
-  color: #1a1a2e;
+  font-weight: 600;
+  color: #333;
 }
 
 .user-info {
@@ -334,12 +215,13 @@ onMounted(() => {
 
 .card-header {
   padding: 20px 24px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #eee;
 }
 
 .card-header h2 {
   font-size: 18px;
-  color: #1a1a2e;
+  font-weight: 600;
+  color: #333;
 }
 
 .loading,
@@ -350,7 +232,7 @@ onMounted(() => {
 }
 
 .error {
-  color: #c33;
+  color: #e74c3c;
 }
 
 .users-table {
@@ -358,36 +240,32 @@ onMounted(() => {
   border-collapse: collapse;
 }
 
-.users-table thead {
-  background: #f8f9fa;
+.users-table th,
+.users-table td {
+  padding: 14px 20px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
 }
 
 .users-table th {
-  text-align: left;
-  padding: 14px 16px;
+  background: #f8f9fa;
   font-weight: 600;
-  color: #333;
+  color: #555;
   font-size: 13px;
   text-transform: uppercase;
-}
-
-.users-table tbody tr {
-  border-bottom: 1px solid #f0f0f0;
-  transition: background 0.2s;
-}
-
-.users-table tbody tr:hover {
-  background: #f8f9fa;
+  letter-spacing: 0.5px;
 }
 
 .users-table td {
-  padding: 14px 16px;
   color: #333;
   font-size: 14px;
 }
 
+.users-table tr:hover {
+  background: #f8f9fa;
+}
+
 .status {
-  display: inline-block;
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 12px;
@@ -400,12 +278,11 @@ onMounted(() => {
 }
 
 .status.inactive {
-  background: rgba(255, 99, 132, 0.15);
-  color: #ff6384;
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
 }
 
 .role {
-  display: inline-block;
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 12px;
@@ -418,36 +295,38 @@ onMounted(() => {
 }
 
 .role.user {
-  background: rgba(255, 165, 2, 0.15);
-  color: #ffa502;
+  background: rgba(108, 117, 125, 0.15);
+  color: #6c757d;
 }
 
 .action-btn {
   padding: 6px 12px;
   border: none;
   border-radius: 6px;
-  font-size: 13px;
   cursor: pointer;
-  transition: all 0.2s;
+  font-size: 13px;
   margin-right: 8px;
+  transition: all 0.3s ease;
 }
 
 .action-btn.edit {
-  background: rgba(102, 126, 234, 0.15);
+  background: #f0f4ff;
   color: #667eea;
 }
 
 .action-btn.edit:hover {
-  background: rgba(102, 126, 234, 0.3);
+  background: #667eea;
+  color: white;
 }
 
 .action-btn.delete {
-  background: rgba(255, 99, 132, 0.15);
-  color: #ff6384;
+  background: #fff0f0;
+  color: #e74c3c;
 }
 
 .action-btn.delete:hover {
-  background: rgba(255, 99, 132, 0.3);
+  background: #e74c3c;
+  color: white;
 }
 
 .modal-overlay {
@@ -458,8 +337,8 @@ onMounted(() => {
   bottom: 0;
   background: rgba(0, 0, 0, 0.5);
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
   z-index: 1000;
 }
 
@@ -467,14 +346,15 @@ onMounted(() => {
   background: white;
   border-radius: 12px;
   padding: 32px;
-  width: 100%;
-  max-width: 480px;
+  width: 480px;
+  max-width: 90%;
 }
 
 .modal h3 {
+  margin: 0 0 24px;
   font-size: 20px;
-  color: #1a1a2e;
-  margin-bottom: 24px;
+  font-weight: 600;
+  color: #333;
 }
 
 .form-group {
@@ -484,8 +364,8 @@ onMounted(() => {
 .form-group label {
   display: block;
   margin-bottom: 8px;
-  color: #333;
   font-weight: 500;
+  color: #555;
   font-size: 14px;
 }
 
@@ -493,10 +373,11 @@ onMounted(() => {
 .form-group select {
   width: 100%;
   padding: 10px 14px;
-  border: 2px solid #e1e1e1;
+  border: 1px solid #ddd;
   border-radius: 8px;
   font-size: 14px;
-  transition: border-color 0.3s;
+  transition: border-color 0.3s ease;
+  box-sizing: border-box;
 }
 
 .form-group input:focus,
@@ -507,8 +388,8 @@ onMounted(() => {
 
 .modal-actions {
   display: flex;
-  gap: 12px;
   justify-content: flex-end;
+  gap: 12px;
   margin-top: 24px;
 }
 
@@ -519,7 +400,7 @@ onMounted(() => {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all 0.3s ease;
 }
 
 .btn-cancel {
@@ -529,17 +410,16 @@ onMounted(() => {
 }
 
 .btn-cancel:hover {
-  background: #e8e8e8;
+  background: #e5e5e5;
 }
 
 .btn-save {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #667eea;
   color: white;
   border: none;
 }
 
 .btn-save:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  background: #5568d3;
 }
 </style>

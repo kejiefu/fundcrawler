@@ -1,106 +1,78 @@
 <template>
-  <div class="dashboard">
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <h2>Admin Panel</h2>
+  <div>
+    <header class="top-bar">
+      <h1>Dashboard</h1>
+      <div class="user-info">
+        <span>Welcome, {{ user?.full_name || user?.username }}</span>
       </div>
-      <nav class="sidebar-nav">
-        <router-link to="/" class="nav-item active">
-          <span class="nav-icon">📊</span>
-          <span>Dashboard</span>
-        </router-link>
-        <router-link to="/users" class="nav-item">
-          <span class="nav-icon">👥</span>
-          <span>Users</span>
-        </router-link>
-        <router-link to="/profile" class="nav-item">
-          <span class="nav-icon">👤</span>
-          <span>Profile</span>
-        </router-link>
-      </nav>
-      <div class="sidebar-footer">
-        <button @click="handleLogout" class="logout-button">
-          <span class="nav-icon">🚪</span>
-          <span>Logout</span>
-        </button>
-      </div>
-    </aside>
+    </header>
 
-    <main class="main-content">
-      <header class="top-bar">
-        <h1>Dashboard</h1>
-        <div class="user-info">
-          <span>Welcome, {{ user?.full_name || user?.username }}</span>
-        </div>
-      </header>
-
-      <div class="dashboard-content">
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-icon blue">👥</div>
-            <div class="stat-info">
-              <h3>{{ stats?.total_users || 0 }}</h3>
-              <p>Total Users</p>
-            </div>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-icon green">✅</div>
-            <div class="stat-info">
-              <h3>{{ stats?.active_users || 0 }}</h3>
-              <p>Active Users</p>
-            </div>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-icon purple">⚡</div>
-            <div class="stat-info">
-              <h3>{{ stats?.admin_users || 0 }}</h3>
-              <p>Administrators</p>
-            </div>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-icon orange">⚙️</div>
-            <div class="stat-info">
-              <h3>{{ stats?.uptime || '99.9%' }}</h3>
-              <p>System Uptime</p>
-            </div>
+    <div class="dashboard-content">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon blue">👥</div>
+          <div class="stat-info">
+            <h3>{{ stats?.total_users || 0 }}</h3>
+            <p>Total Users</p>
           </div>
         </div>
 
-        <div class="dashboard-grid">
-          <div class="card activity-card">
-            <h2>Recent Activity</h2>
-            <div class="activity-list">
-              <div v-if="loading" class="loading">Loading...</div>
-              <div v-else-if="activities.length === 0" class="no-data">No recent activity</div>
-              <div v-else v-for="(activity, index) in activities" :key="index" class="activity-item">
-                <div class="activity-dot"></div>
-                <div class="activity-content">
-                  <p>{{ activity.description }}</p>
-                  <span class="activity-time">{{ formatTime(activity.timestamp) }}</span>
-                </div>
-              </div>
-            </div>
+        <div class="stat-card">
+          <div class="stat-icon green">✅</div>
+          <div class="stat-info">
+            <h3>{{ stats?.active_users || 0 }}</h3>
+            <p>Active Users</p>
           </div>
+        </div>
 
-          <div class="card system-card">
-            <h2>System Status</h2>
-            <div class="system-info">
-              <div class="system-item">
-                <span>Status</span>
-                <span class="status-badge success">{{ stats?.system_status || 'operational' }}</span>
-              </div>
-              <div class="system-item">
-                <span>Last Updated</span>
-                <span>{{ formatTime(stats?.last_updated) }}</span>
+        <div class="stat-card">
+          <div class="stat-icon purple">⚡</div>
+          <div class="stat-info">
+            <h3>{{ stats?.admin_users || 0 }}</h3>
+            <p>Administrators</p>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon orange">⚙️</div>
+          <div class="stat-info">
+            <h3>{{ stats?.uptime || '99.9%' }}</h3>
+            <p>System Uptime</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-grid">
+        <div class="card activity-card">
+          <h2>Recent Activity</h2>
+          <div class="activity-list">
+            <div v-if="loading" class="loading">Loading...</div>
+            <div v-else-if="activities.length === 0" class="no-data">No recent activity</div>
+            <div v-else v-for="(activity, index) in activities" :key="index" class="activity-item">
+              <div class="activity-dot"></div>
+              <div class="activity-content">
+                <p>{{ activity.description }}</p>
+                <span class="activity-time">{{ formatTime(activity.timestamp) }}</span>
               </div>
             </div>
           </div>
         </div>
+
+        <div class="card system-card">
+          <h2>System Status</h2>
+          <div class="system-info">
+            <div class="system-item">
+              <span>Status</span>
+              <span class="status-badge success">{{ stats?.system_status || 'operational' }}</span>
+            </div>
+            <div class="system-item">
+              <span>Last Updated</span>
+              <span>{{ formatTime(stats?.last_updated) }}</span>
+            </div>
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
   </div>
 </template>
 
@@ -139,11 +111,6 @@ const formatTime = (timestamp) => {
   return date.toLocaleString()
 }
 
-const handleLogout = () => {
-  authStore.logout()
-  router.push('/login')
-}
-
 onMounted(() => {
   if (!authStore.isAuthenticated) {
     router.push('/login')
@@ -155,105 +122,19 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.dashboard {
-  display: flex;
-  min-height: 100vh;
-}
-
-.sidebar {
-  width: 260px;
-  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
-  color: white;
-  display: flex;
-  flex-direction: column;
-  position: fixed;
-  height: 100vh;
-}
-
-.sidebar-header {
-  padding: 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.sidebar-header h2 {
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.sidebar-nav {
-  flex: 1;
-  padding: 16px 12px;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  color: rgba(255, 255, 255, 0.7);
-  text-decoration: none;
-  border-radius: 8px;
-  margin-bottom: 4px;
-  transition: all 0.3s ease;
-}
-
-.nav-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-}
-
-.nav-item.router-link-active,
-.nav-item.active {
-  background: rgba(102, 126, 234, 0.3);
-  color: white;
-}
-
-.nav-icon {
-  font-size: 20px;
-}
-
-.sidebar-footer {
-  padding: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.logout-button {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.logout-button:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.main-content {
-  flex: 1;
-  margin-left: 260px;
-  background: #f5f5f5;
-  min-height: 100vh;
-}
-
 .top-bar {
   background: white;
   padding: 20px 32px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid #eee;
 }
 
 .top-bar h1 {
   font-size: 24px;
-  color: #1a1a2e;
+  font-weight: 600;
+  color: #333;
 }
 
 .user-info {
@@ -267,7 +148,7 @@ onMounted(() => {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 24px;
   margin-bottom: 32px;
 }
@@ -280,43 +161,43 @@ onMounted(() => {
   align-items: center;
   gap: 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  transition: all 0.3s ease;
-}
-
-.stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
 .stat-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 28px;
+  font-size: 40px;
 }
 
-.stat-icon.blue { background: rgba(102, 126, 234, 0.15); }
-.stat-icon.green { background: rgba(72, 199, 142, 0.15); }
-.stat-icon.purple { background: rgba(118, 75, 162, 0.15); }
-.stat-icon.orange { background: rgba(255, 165, 2, 0.15); }
+.stat-icon.blue {
+  color: #667eea;
+}
+
+.stat-icon.green {
+  color: #48c78e;
+}
+
+.stat-icon.purple {
+  color: #764ba2;
+}
+
+.stat-icon.orange {
+  color: #f093fb;
+}
 
 .stat-info h3 {
-  font-size: 32px;
-  color: #1a1a2e;
+  font-size: 28px;
+  font-weight: 600;
+  color: #333;
   margin-bottom: 4px;
 }
 
 .stat-info p {
-  color: #666;
+  color: #888;
   font-size: 14px;
 }
 
 .dashboard-grid {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 24px;
 }
 
@@ -329,26 +210,30 @@ onMounted(() => {
 
 .card h2 {
   font-size: 18px;
-  color: #1a1a2e;
+  font-weight: 600;
+  color: #333;
   margin-bottom: 20px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid #f0f0f0;
 }
 
 .activity-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .activity-item {
   display: flex;
-  gap: 12px;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.activity-item:last-child {
+  border-bottom: none;
 }
 
 .activity-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   background: #667eea;
   border-radius: 50%;
   margin-top: 6px;
@@ -362,15 +247,8 @@ onMounted(() => {
 }
 
 .activity-time {
-  color: #999;
+  color: #888;
   font-size: 12px;
-}
-
-.loading,
-.no-data {
-  text-align: center;
-  color: #999;
-  padding: 40px;
 }
 
 .system-info {
@@ -406,6 +284,13 @@ onMounted(() => {
 .status-badge.success {
   background: rgba(72, 199, 142, 0.15);
   color: #48c78e;
+}
+
+.loading,
+.no-data {
+  padding: 40px;
+  text-align: center;
+  color: #666;
 }
 
 @media (max-width: 1200px) {

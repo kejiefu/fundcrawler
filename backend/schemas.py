@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, ConfigDict
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 class UserBase(BaseModel):
@@ -34,3 +34,32 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     username: Optional[str] = None
+
+# 菜单相关 Schemas
+class MenuBase(BaseModel):
+    name: str
+    path: Optional[str] = None
+    icon: Optional[str] = None
+    parent_id: Optional[int] = None
+    order: int = 0
+    is_active: bool = True
+    permission: Optional[str] = None
+
+class MenuCreate(MenuBase):
+    pass
+
+class MenuUpdate(MenuBase):
+    name: Optional[str] = None
+    order: Optional[int] = None
+    is_active: Optional[bool] = None
+
+class MenuResponse(MenuBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    children: List['MenuResponse'] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+# 更新前向引用
+MenuResponse.model_rebuild()

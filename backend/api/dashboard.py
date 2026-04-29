@@ -1,18 +1,21 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from datetime import datetime, timedelta
+from datetime import datetime
 from database import get_db
 from models import User
 from auth import get_current_active_user
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
-@router.get("/stats")
+@router.get("/stats", summary="获取仪表盘统计数据")
 async def get_dashboard_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
+    """获取仪表盘统计数据，包括用户数量、系统状态等"""
+    
+    # 查询用户统计
     result = await db.execute(select(func.count(User.id)))
     total_users = result.scalar()
 
@@ -32,23 +35,27 @@ async def get_dashboard_stats(
         "last_updated": datetime.now().isoformat()
     }
 
-@router.get("/activity")
+@router.get("/activity", summary="获取最近活动")
 async def get_recent_activity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
+    """获取最近的系统活动记录"""
+    
+    # 查询最近创建的10个用户
     recent_users_result = await db.execute(
         select(User).order_by(User.created_at.desc()).limit(10)
     )
     recent_users = recent_users_result.scalars().all()
 
-    activity = []
+    # 构建活动列表
+    activities = []
     for user in recent_users:
-        activity.append({
+        activities.append({
             "type": "user_created",
-            "description": f"User '{user.username}' was created",
+            "description": f"用户 '{user.username}' 已创建",
             "timestamp": user.created_at.isoformat() if user.created_at else None,
             "user": user.username
         })
 
-    return {"activities": activity}
+    return {"activities": activities}

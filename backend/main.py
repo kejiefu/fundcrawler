@@ -2,11 +2,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from database import init_db
-from api import auth, users, dashboard
+from init_db import create_default_admin, create_default_menus
+from api import auth, users, dashboard, menus
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    await create_default_admin()
+    await create_default_menus()
     yield
 
 app = FastAPI(
@@ -27,6 +30,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(dashboard.router)
+app.include_router(menus.router)
 
 @app.get("/")
 async def root():

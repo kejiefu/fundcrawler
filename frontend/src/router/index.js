@@ -25,6 +25,30 @@ const routes = [
     name: 'Profile',
     component: () => import('../views/ProfileView.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/menus',
+    name: 'Menus',
+    component: () => import('../views/MenuView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/funds',
+    name: 'Funds',
+    component: () => import('../views/FundListView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/funds/stocks',
+    name: 'StockFunds',
+    component: () => import('../views/FundListView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/funds/bonds',
+    name: 'BondFunds',
+    component: () => import('../views/FundListView.vue'),
+    meta: { requiresAuth: true }
   }
 ]
 

@@ -1,19 +1,29 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-import os
+from core.config import settings
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "mysql+aiomysql://root:root123@localhost:3306/admin_dashboard?charset=utf8mb4"
+# 创建数据库引擎，使用配置类中的数据库 URL
+engine = create_async_engine(
+    settings.database_url,
+    echo=settings.debug,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20
 )
 
-engine = create_async_engine(DATABASE_URL, echo=True, pool_pre_ping=True, pool_size=10)
-async_session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# 创建异步会话工厂
+async_session_maker = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False
+)
 
 class Base(DeclarativeBase):
+    """SQLAlchemy 基础模型类"""
     pass
 
-async def get_db():
+async def get_db() -> AsyncSession:
+    """获取数据库会话的依赖注入函数"""
     async with async_session_maker() as session:
         try:
             yield session
@@ -25,5 +35,6 @@ async def get_db():
             await session.close()
 
 async def init_db():
+    """初始化数据库表结构"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
