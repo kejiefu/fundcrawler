@@ -19,7 +19,11 @@ class AppSettings(BaseSettings):
     
     # 应用配置
     debug: bool = False
-    
+
+    # A 股基本信息定时同步（启动后立即执行一次，之后按间隔重复）
+    a_share_basic_sync_enabled: bool = True
+    a_share_basic_sync_interval_seconds: int = 3600
+
     @property
     def database_url(self) -> str:
         """生成数据库连接 URL"""

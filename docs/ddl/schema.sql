@@ -41,7 +41,44 @@ CREATE TABLE IF NOT EXISTS users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
 -- ==============================================
--- 3. 插入初始数据
+-- 3. A 股基本信息表 (a_share_stock_basic)
+-- ==============================================
+-- 由应用后台同步写入；股息率优先东财分红配送，缺失时用新浪年均股息近似
+CREATE TABLE IF NOT EXISTS a_share_stock_basic (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+    code VARCHAR(10) NOT NULL COMMENT '证券代码',
+    name VARCHAR(64) NOT NULL COMMENT '证券简称',
+    board_label VARCHAR(32) DEFAULT NULL COMMENT '板块/市场推断',
+    latest_price DECIMAL(14,4) DEFAULT NULL COMMENT '最新价',
+    change_pct DECIMAL(12,4) DEFAULT NULL COMMENT '涨跌幅%',
+    change_amount DECIMAL(14,4) DEFAULT NULL COMMENT '涨跌额',
+    volume DECIMAL(20,2) DEFAULT NULL COMMENT '成交量(手)',
+    amount DECIMAL(22,2) DEFAULT NULL COMMENT '成交额(元)',
+    amplitude DECIMAL(12,4) DEFAULT NULL COMMENT '振幅%',
+    high DECIMAL(14,4) DEFAULT NULL COMMENT '最高',
+    low DECIMAL(14,4) DEFAULT NULL COMMENT '最低',
+    open_price DECIMAL(14,4) DEFAULT NULL COMMENT '今开',
+    prev_close DECIMAL(14,4) DEFAULT NULL COMMENT '昨收',
+    volume_ratio DECIMAL(14,4) DEFAULT NULL COMMENT '量比',
+    turnover_rate DECIMAL(12,4) DEFAULT NULL COMMENT '换手率%',
+    pe_dynamic DECIMAL(14,4) DEFAULT NULL COMMENT '市盈率-动态',
+    pb DECIMAL(14,4) DEFAULT NULL COMMENT '市净率',
+    total_market_cap DECIMAL(22,2) DEFAULT NULL COMMENT '总市值(元)',
+    circulating_market_cap DECIMAL(22,2) DEFAULT NULL COMMENT '流通市值(元)',
+    rise_speed DECIMAL(12,4) DEFAULT NULL COMMENT '涨速',
+    change_5min DECIMAL(12,4) DEFAULT NULL COMMENT '5分钟涨跌%',
+    change_60d DECIMAL(12,4) DEFAULT NULL COMMENT '60日涨跌幅%',
+    change_ytd DECIMAL(12,4) DEFAULT NULL COMMENT '年初至今涨跌幅%',
+    dividend_yield DECIMAL(12,4) DEFAULT NULL COMMENT '股息率%',
+    dividend_yield_as_of VARCHAR(12) DEFAULT NULL COMMENT '股息率对应报告期YYYYMMDD；新浪回填时为空',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_a_share_stock_basic_code (code),
+    KEY idx_a_share_stock_basic_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='沪深京A股基本信息';
+
+-- ==============================================
+-- 4. 插入初始数据
 -- ==============================================
 -- 默认管理员账户
 -- 密码: admin123 (BCrypt 加密)
@@ -50,7 +87,7 @@ SELECT 'admin', 'admin@example.com', '$2b$12$EixZaYbB.rK4fl8x2q7Meu6Q6D2V5fF5Q5Q
 WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'admin');
 
 -- ==============================================
--- 4. 权限说明
+-- 5. 权限说明
 -- ==============================================
 -- 数据库用户权限建议:
 -- CREATE USER 'admin_app'@'localhost' IDENTIFIED BY 'your_password';
@@ -58,7 +95,7 @@ WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'admin');
 -- FLUSH PRIVILEGES;
 
 -- ==============================================
--- 5. 表结构说明
+-- 6. 表结构说明
 -- ==============================================
 -- 字段说明:
 -- id: 用户唯一标识，自增主键
@@ -72,7 +109,7 @@ WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'admin');
 -- updated_at: 记录更新时间
 
 -- ==============================================
--- 6. 索引说明
+-- 7. 索引说明
 -- ==============================================
 -- uk_username: 用户名唯一索引，确保用户名不重复
 -- uk_email: 邮箱唯一索引，确保邮箱不重复
