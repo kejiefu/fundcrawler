@@ -1,6 +1,7 @@
 <template>
   <div class="app-layout">
-    <aside class="sidebar">
+    <!-- 只有已认证时才显示侧边栏 -->
+    <aside v-if="authStore.isAuthenticated" class="sidebar">
       <div class="sidebar-header">
         <h2>Admin Panel</h2>
       </div>
@@ -13,7 +14,7 @@
       </div>
     </aside>
 
-    <main class="main-content">
+    <main :class="['main-content', { 'full-width': !authStore.isAuthenticated }]">
       <router-view />
     </main>
   </div>
@@ -102,5 +103,10 @@ body {
   margin-left: 260px;
   background: #f5f5f5;
   min-height: 100vh;
+}
+
+/* 未认证时主内容区全屏显示 */
+.main-content.full-width {
+  margin-left: 0;
 }
 </style>

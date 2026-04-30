@@ -1,14 +1,11 @@
-import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from core.config import settings
 from database import init_db
 from init_db import create_default_admin, create_default_menus
-from api import auth, users, dashboard, menus
-from jobs.a_share_basic_sync import run_a_share_stock_basic_sync_loop
+from api import auth, users, dashboard, menus, stocks
 
 
 @asynccontextmanager
@@ -16,22 +13,11 @@ async def lifespan(app: FastAPI):
     await init_db()
     await create_default_admin()
     await create_default_menus()
-    sync_task: asyncio.Task[None] | None = None
-    if settings.a_share_basic_sync_enabled:
-        sync_task = asyncio.create_task(
-            run_a_share_stock_basic_sync_loop(
-                settings.a_share_basic_sync_interval_seconds
-            )
-        )
     try:
         yield
     finally:
-        if sync_task is not None:
-            sync_task.cancel()
-            try:
-                await sync_task
-            except asyncio.CancelledError:
-                pass
+        pass
+
 
 app = FastAPI(
     title="Admin Dashboard API",
@@ -52,6 +38,7 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(dashboard.router)
 app.include_router(menus.router)
+app.include_router(stocks.router)
 
 @app.get("/")
 async def root():

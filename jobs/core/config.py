@@ -11,11 +11,10 @@ class AppSettings(BaseSettings):
     db_name: str = "admin_dashboard"
     db_charset: str = "utf8mb4"
 
-    secret_key: str = "your-secret-key-change-this-in-production-2024"
-    algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60
-
     debug: bool = False
+
+    a_share_basic_sync_enabled: bool = True
+    a_share_basic_sync_interval_seconds: int = 3600
 
     @property
     def database_url(self) -> str:

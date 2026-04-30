@@ -35,7 +35,6 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
-# 菜单相关 Schemas
 class MenuBase(BaseModel):
     name: str
     path: Optional[str] = None
@@ -61,5 +60,42 @@ class MenuResponse(MenuBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-# 更新前向引用
 MenuResponse.model_rebuild()
+
+class StockBasicResponse(BaseModel):
+    id: int
+    code: str
+    name: str
+    board_label: Optional[str] = None
+    latest_price: Optional[float] = None
+    change_pct: Optional[float] = None
+    change_amount: Optional[float] = None
+    volume: Optional[float] = None
+    amount: Optional[float] = None
+    amplitude: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    open_price: Optional[float] = None
+    prev_close: Optional[float] = None
+    volume_ratio: Optional[float] = None
+    turnover_rate: Optional[float] = None
+    pe_dynamic: Optional[float] = None
+    pb: Optional[float] = None
+    total_market_cap: Optional[float] = None
+    circulating_market_cap: Optional[float] = None
+    rise_speed: Optional[float] = None
+    change_5min: Optional[float] = None
+    change_60d: Optional[float] = None
+    change_ytd: Optional[float] = None
+    dividend_yield: Optional[float] = None
+    dividend_yield_as_of: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class StockListResponse(BaseModel):
+    total: int
+    items: List[StockBasicResponse]
+    page: int
+    page_size: int

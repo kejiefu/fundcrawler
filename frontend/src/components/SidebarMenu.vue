@@ -87,7 +87,11 @@ const getIcon = (iconName) => {
     'Profile': '👤',
     'TrendingUp': '📈',
     'LineChart': '📉',
-    'BarChart': '📊'
+    'BarChart': '📊',
+    'Home': '🏠',
+    'About': 'ℹ️',
+    'Contact': '📧',
+    'Logout': '🚪'
   }
   return iconMap[iconName] || '📄'
 }

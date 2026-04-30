@@ -62,4 +62,10 @@ export const menusAPI = {
   deleteMenu: (menuId) => api.delete(`/menus/${menuId}`)
 }
 
+export const stocksAPI = {
+  getStocks: (params) => api.get('/stocks/', { params }),
+  getStock: (code) => api.get(`/stocks/${code}`),
+  getBoards: () => api.get('/stocks/boards')
+}
+
 export default api

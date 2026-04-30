@@ -21,17 +21,40 @@ DEFAULT_MENUS = [
         "permission": "users.view"
     },
     {
+        "name": "股票管理",
+        "path": None,
+        "icon": "TrendingUp",
+        "order": 3,
+        "permission": "stock.view"
+    },
+    {
+        "name": "股票信息",
+        "path": "/stocks/basic",
+        "icon": "LineChart",
+        "parent_id": 3,
+        "order": 1,
+        "permission": "stock.basic.view"
+    },
+    {
+        "name": "蓝筹股票",
+        "path": "/stocks/bluechip",
+        "icon": "BarChart",
+        "parent_id": 3,
+        "order": 2,
+        "permission": "stock.bluechip.view"
+    },
+    {
         "name": "系统管理",
         "path": None,
         "icon": "Settings",
-        "order": 3,
+        "order": 4,
         "permission": "system.view"
     },
     {
         "name": "菜单管理",
         "path": "/menus",
         "icon": "Menu",
-        "parent_id": 3,
+        "parent_id": 6,
         "order": 1,
         "permission": "menus.view"
     },
@@ -39,7 +62,7 @@ DEFAULT_MENUS = [
         "name": "权限管理",
         "path": "/permissions",
         "icon": "Shield",
-        "parent_id": 3,
+        "parent_id": 6,
         "order": 2,
         "permission": "permissions.view"
     }
@@ -74,7 +97,6 @@ async def create_default_admin() -> None:
 async def create_default_menus() -> None:
     """创建默认菜单（如果不存在）"""
     async with async_session_maker() as session:
-        # 检查是否已有菜单
         result = await session.execute(select(Menu))
         existing_menus = result.scalars().all()
         
@@ -82,19 +104,61 @@ async def create_default_menus() -> None:
             print("菜单数据已存在，跳过创建")
             return
         
-        # 创建默认菜单
-        created_menus = {}
+        # 先创建所有父菜单（parent_id 为 None 的）
+        parent_menus = []
         for menu_data in DEFAULT_MENUS:
-            menu = Menu(
-                name=menu_data["name"],
-                path=menu_data["path"],
-                icon=menu_data["icon"],
-                parent_id=menu_data.get("parent_id"),
-                order=menu_data["order"],
-                is_active=True,
-                permission=menu_data["permission"]
+            if menu_data.get("parent_id") is None:
+                menu = Menu(
+                    name=menu_data["name"],
+                    path=menu_data.get("path"),
+                    icon=menu_data["icon"],
+                    parent_id=None,
+                    order=menu_data["order"],
+                    is_active=True,
+                    permission=menu_data["permission"]
+                )
+                session.add(menu)
+                parent_menus.append(menu_data)
+        
+        await session.flush()
+        
+        # 构建 name -> id 的映射
+        name_to_id = {}
+        for menu_data in parent_menus:
+            result = await session.execute(
+                select(Menu).where(Menu.name == menu_data["name"])
             )
-            session.add(menu)
+            created_menu = result.scalar_one()
+            name_to_id[menu_data["name"]] = created_menu.id
+        
+        # 再创建子菜单
+        for menu_data in DEFAULT_MENUS:
+            if menu_data.get("parent_id") is not None:
+                parent_name = None
+                for pm in parent_menus:
+                    if pm.get("_order") == menu_data.get("parent_id"):
+                        pass
+        
+        # 使用 name 映射找到 parent_id
+        for menu_data in DEFAULT_MENUS:
+            if menu_data.get("parent_id") is not None:
+                parent_name = None
+                if "股票信息" in menu_data["name"] or "蓝筹" in menu_data["name"]:
+                    parent_name = "股票管理"
+                elif "菜单管理" in menu_data["name"] or "权限管理" in menu_data["name"]:
+                    parent_name = "系统管理"
+                
+                parent_id = name_to_id.get(parent_name)
+                menu = Menu(
+                    name=menu_data["name"],
+                    path=menu_data.get("path"),
+                    icon=menu_data["icon"],
+                    parent_id=parent_id,
+                    order=menu_data["order"],
+                    is_active=True,
+                    permission=menu_data["permission"]
+                )
+                session.add(menu)
         
         await session.commit()
         print("默认菜单已创建")

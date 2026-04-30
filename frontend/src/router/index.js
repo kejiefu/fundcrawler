@@ -49,6 +49,18 @@ const routes = [
     name: 'BondFunds',
     component: () => import('../views/FundListView.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/stocks/basic',
+    name: 'StockBasic',
+    component: () => import('../views/StockListView.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/stocks/bluechip',
+    name: 'BlueChipStocks',
+    component: () => import('../views/StockListView.vue'),
+    meta: { requiresAuth: true }
   }
 ]
 
