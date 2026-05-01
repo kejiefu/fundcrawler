@@ -4,22 +4,26 @@ from sqlalchemy.orm import relationship
 from database import Base
 
 class User(Base):
+    """用户表 - 存储系统用户信息"""
+    
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(50), unique=True, index=True, nullable=False)
-    email = Column(String(100), unique=True, index=True, nullable=False)
-    hashed_password = Column(String(255), nullable=False)
-    full_name = Column(String(100))
-    is_active = Column(Boolean, default=True)
-    is_superuser = Column(Boolean, default=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    id = Column(Integer, primary_key=True, index=True, comment="用户唯一标识")
+    username = Column(String(50), unique=True, index=True, nullable=False, comment="用户名")
+    email = Column(String(100), unique=True, index=True, nullable=False, comment="邮箱地址")
+    hashed_password = Column(String(255), nullable=False, comment="加密后的密码")
+    full_name = Column(String(100), comment="真实姓名")
+    is_active = Column(Boolean, default=True, comment="账户是否激活")
+    is_superuser = Column(Boolean, default=False, comment="是否为超级管理员")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), comment="更新时间")
 
 class Menu(Base):
+    """菜单表 - 存储系统菜单信息"""
+    
     __tablename__ = "menus"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True, index=True, comment="菜单唯一标识")
     name = Column(String(50), nullable=False, comment="菜单名称")
     path = Column(String(100), comment="路由路径")
     icon = Column(String(50), comment="菜单图标")
@@ -27,19 +31,18 @@ class Menu(Base):
     order = Column(Integer, default=0, comment="排序序号")
     is_active = Column(Boolean, default=True, comment="是否启用")
     permission = Column(String(100), comment="权限标识")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), comment="更新时间")
     
-    # 自关联关系
     children = relationship("Menu", backref="parent", remote_side=[id])
 
 
 class AShareStockBasic(Base):
-    """沪深京 A 股基本信息（东财实时列表字段快照，启动后后台同步写入）"""
+    """A股基本信息表 - 存储沪深京A股实时行情数据"""
 
     __tablename__ = "a_share_stock_basic"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True, comment="主键")
     code = Column(String(10), unique=True, index=True, nullable=False, comment="证券代码")
     name = Column(String(64), nullable=False, comment="证券简称")
     board_label = Column(String(32), nullable=True, comment="板块/市场推断")
@@ -63,12 +66,11 @@ class AShareStockBasic(Base):
     change_5min = Column(Numeric(12, 4), nullable=True, comment="5分钟涨跌%")
     change_60d = Column(Numeric(12, 4), nullable=True, comment="60日涨跌幅%")
     change_ytd = Column(Numeric(12, 4), nullable=True, comment="年初至今涨跌幅%")
-    # 股息率：优先东财分红配送报告期「现金分红-股息率」(%)；缺失时用新浪历史分红「年均股息」(%) 近似
     dividend_yield = Column(Numeric(12, 4), nullable=True, comment="股息率%")
     dividend_yield_as_of = Column(
         String(12),
         nullable=True,
-        comment="股息率对应报告期YYYYMMDD；新浪回填时为空",
+        comment="股息率对应报告期YYYYMMDD",
     )
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")

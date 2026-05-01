@@ -4,10 +4,10 @@ from database import init_db, async_session_maker
 from models import User, Menu
 from auth import get_password_hash
 
-# 默认菜单数据
+# Default menu data
 DEFAULT_MENUS = [
     {
-        "name": "仪表盘",
+        "name": "数据看板",
         "path": "/dashboard",
         "icon": "LayoutDashboard",
         "order": 1,
@@ -28,7 +28,7 @@ DEFAULT_MENUS = [
         "permission": "stock.view"
     },
     {
-        "name": "股票信息",
+        "name": "股票基本信息",
         "path": "/stocks/basic",
         "icon": "LineChart",
         "parent_id": 3,
@@ -36,7 +36,7 @@ DEFAULT_MENUS = [
         "permission": "stock.basic.view"
     },
     {
-        "name": "蓝筹股票",
+        "name": "蓝筹股",
         "path": "/stocks/bluechip",
         "icon": "BarChart",
         "parent_id": 3,
@@ -69,17 +69,14 @@ DEFAULT_MENUS = [
 ]
 
 async def create_default_admin() -> None:
-    """创建默认管理员用户（如果不存在）"""
-    # 初始化数据库表结构
+    """Create default admin user if not exists"""
     await init_db()
 
     async with async_session_maker() as session:
-        # 检查管理员是否已存在
         result = await session.execute(select(User).where(User.username == "admin"))
         existing_admin = result.scalar_one_or_none()
 
         if not existing_admin:
-            # 创建默认管理员
             admin_user = User(
                 username="admin",
                 email="admin@example.com",
@@ -90,21 +87,21 @@ async def create_default_admin() -> None:
             )
             session.add(admin_user)
             await session.commit()
-            print("默认管理员用户已创建: admin / admin123")
+            print("Default admin user created: admin / admin123")
         else:
-            print("管理员用户已存在")
+            print("Admin user already exists")
 
 async def create_default_menus() -> None:
-    """创建默认菜单（如果不存在）"""
+    """Create default menus if not exists"""
     async with async_session_maker() as session:
         result = await session.execute(select(Menu))
         existing_menus = result.scalars().all()
         
         if existing_menus:
-            print("菜单数据已存在，跳过创建")
+            print("Menu data already exists, skipping creation")
             return
         
-        # 先创建所有父菜单（parent_id 为 None 的）
+        # First create parent menus (parent_id is None)
         parent_menus = []
         for menu_data in DEFAULT_MENUS:
             if menu_data.get("parent_id") is None:
@@ -122,7 +119,7 @@ async def create_default_menus() -> None:
         
         await session.flush()
         
-        # 构建 name -> id 的映射
+        # Build name -> id mapping
         name_to_id = {}
         for menu_data in parent_menus:
             result = await session.execute(
@@ -131,22 +128,14 @@ async def create_default_menus() -> None:
             created_menu = result.scalar_one()
             name_to_id[menu_data["name"]] = created_menu.id
         
-        # 再创建子菜单
+        # Create child menus
         for menu_data in DEFAULT_MENUS:
             if menu_data.get("parent_id") is not None:
                 parent_name = None
-                for pm in parent_menus:
-                    if pm.get("_order") == menu_data.get("parent_id"):
-                        pass
-        
-        # 使用 name 映射找到 parent_id
-        for menu_data in DEFAULT_MENUS:
-            if menu_data.get("parent_id") is not None:
-                parent_name = None
-                if "股票信息" in menu_data["name"] or "蓝筹" in menu_data["name"]:
-                    parent_name = "股票管理"
-                elif "菜单管理" in menu_data["name"] or "权限管理" in menu_data["name"]:
-                    parent_name = "系统管理"
+                if "Stock Info" in menu_data["name"] or "Bluechip" in menu_data["name"]:
+                    parent_name = "Stock Management"
+                elif "Menu Management" in menu_data["name"] or "Permission" in menu_data["name"]:
+                    parent_name = "System Management"
                 
                 parent_id = name_to_id.get(parent_name)
                 menu = Menu(
@@ -161,10 +150,10 @@ async def create_default_menus() -> None:
                 session.add(menu)
         
         await session.commit()
-        print("默认菜单已创建")
+        print("Default menus created")
 
 async def init_data():
-    """初始化所有默认数据"""
+    """Initialize all default data"""
     await create_default_admin()
     await create_default_menus()
 

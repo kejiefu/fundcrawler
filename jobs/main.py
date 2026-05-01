@@ -1,6 +1,6 @@
 """
-Jobs 服务独立启动入口
-支持 A 股基本信息定时同步任务，可扩展更多定时任务
+Jobs service independent entry point
+Supports A-share basic info sync task, can be extended with more scheduled tasks
 """
 
 import asyncio
@@ -24,9 +24,9 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan():
-    """生命周期管理：启动时初始化，关闭时清理"""
+    """Lifecycle management: initialize on startup, cleanup on shutdown"""
     await init_db()
-    logger.info("Jobs 服务数据库初始化完成")
+    logger.info("Jobs service database initialization complete")
 
     sync_task: asyncio.Task[None] | None = None
     if settings.a_share_basic_sync_enabled:
@@ -35,7 +35,7 @@ async def lifespan():
                 settings.a_share_basic_sync_interval_seconds
             )
         )
-        logger.info(f"A 股基本信息同步任务已启动，间隔 {settings.a_share_basic_sync_interval_seconds} 秒")
+        logger.info(f"A-share basic info sync task started, interval: {settings.a_share_basic_sync_interval_seconds}s")
 
     try:
         yield
@@ -45,16 +45,16 @@ async def lifespan():
             try:
                 await sync_task
             except asyncio.CancelledError:
-                logger.info("A 股基本信息同步任务已停止")
-        logger.info("Jobs 服务已关闭")
+                logger.info("A-share basic info sync task stopped")
+        logger.info("Jobs service stopped")
 
 
 async def main():
-    """主入口"""
+    """Main entry point"""
     logger.info("=" * 50)
-    logger.info("Jobs 服务启动中...")
-    logger.info(f"A 股同步启用: {settings.a_share_basic_sync_enabled}")
-    logger.info(f"同步间隔: {settings.a_share_basic_sync_interval_seconds} 秒")
+    logger.info("Jobs service starting...")
+    logger.info(f"A-share sync enabled: {settings.a_share_basic_sync_enabled}")
+    logger.info(f"Sync interval: {settings.a_share_basic_sync_interval_seconds}s")
     logger.info("=" * 50)
 
     async with lifespan():
@@ -66,4 +66,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("收到中断信号，退出...")
+        logger.info("Interrupted signal received, exiting...")

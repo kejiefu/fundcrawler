@@ -1,5 +1,5 @@
 -- ==============================================
--- Admin Dashboard 数据库 DDL 文件
+-- Stock Fund Analysis 数据库 DDL 文件
 -- ==============================================
 -- 创建时间: 2024年
 -- 数据库类型: MySQL 8.0+
@@ -8,15 +8,15 @@
 -- ==============================================
 -- 1. 创建数据库
 -- ==============================================
-CREATE DATABASE IF NOT EXISTS admin_dashboard 
+CREATE DATABASE IF NOT EXISTS stock_fund_analysis 
 CHARACTER SET utf8mb4 
 COLLATE utf8mb4_unicode_ci;
 
 -- 使用数据库
-USE admin_dashboard;
+USE stock_fund_analysis;
 
 -- ==============================================
--- 2. 用户表 (users)
+-- 2. 用户表(users)
 -- ==============================================
 -- 存储系统用户信息
 CREATE TABLE IF NOT EXISTS users (
@@ -75,23 +75,34 @@ CREATE TABLE IF NOT EXISTS a_share_stock_basic (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     UNIQUE KEY uk_a_share_stock_basic_code (code),
     KEY idx_a_share_stock_basic_code (code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='沪深京A股基本信息';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='沪深京A股基本信息表';
 
 -- ==============================================
--- 4. 插入初始数据
+-- 4. 菜单表 (menus)
 -- ==============================================
--- 默认管理员账户
--- 密码: admin123 (BCrypt 加密)
-INSERT INTO users (username, email, hashed_password, full_name, is_active, is_superuser)
-SELECT 'admin', 'admin@example.com', '$2b$12$EixZaYbB.rK4fl8x2q7Meu6Q6D2V5fF5Q5Q5Q5Q5Q5Q5Q5Q5Q5Q', 'System Administrator', TRUE, TRUE
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'admin');
+CREATE TABLE IF NOT EXISTS menus (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '菜单唯一标识',
+    name VARCHAR(50) NOT NULL COMMENT '菜单名称',
+    path VARCHAR(100) DEFAULT NULL COMMENT '路由路径',
+    icon VARCHAR(50) DEFAULT NULL COMMENT '菜单图标',
+    parent_id INT DEFAULT NULL COMMENT '父菜单ID',
+    `order` INT DEFAULT 0 COMMENT '排序序号',
+    is_active BOOLEAN DEFAULT TRUE COMMENT '是否启用',
+    permission VARCHAR(100) DEFAULT NULL COMMENT '权限标识',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    
+    KEY idx_menus_id (id),
+    KEY fk_menus_parent_id (parent_id),
+    CONSTRAINT fk_menus_parent_id FOREIGN KEY (parent_id) REFERENCES menus (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='菜单表';
 
 -- ==============================================
 -- 5. 权限说明
 -- ==============================================
--- 数据库用户权限建议:
+-- 数据库用户权限建议
 -- CREATE USER 'admin_app'@'localhost' IDENTIFIED BY 'your_password';
--- GRANT SELECT, INSERT, UPDATE, DELETE ON admin_dashboard.* TO 'admin_app'@'localhost';
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON stock_fund_analysis.* TO 'admin_app'@'localhost';
 -- FLUSH PRIVILEGES;
 
 -- ==============================================

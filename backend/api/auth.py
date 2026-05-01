@@ -10,15 +10,15 @@ from core.config import settings
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
-@router.post("/login", response_model=Token, summary="用户登录")
+@router.post("/login", response_model=Token, summary="User login")
 async def login(login_data: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token:
-    """用户登录接口，验证用户名密码后返回 JWT Token"""
+    """User login interface, verify username and password and return JWT Token"""
     user = await authenticate_user(db, login_data.username, login_data.password)
     
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户名或密码错误",
+            detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -30,20 +30,17 @@ async def login(login_data: LoginRequest, db: AsyncSession = Depends(get_db)) ->
     
     return {"access_token": access_token, "token_type": "bearer"}
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="用户注册")
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED, summary="User registration")
 async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)) -> UserResponse:
-    """用户注册接口，创建新用户账户"""
-    # 检查用户名是否已存在
+    """User registration interface, create new user account"""
     result = await db.execute(select(User).where(User.username == user_data.username))
     if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="用户名已被注册")
+        raise HTTPException(status_code=400, detail="Username already registered")
 
-    # 检查邮箱是否已存在
     result = await db.execute(select(User).where(User.email == user_data.email))
     if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="邮箱已被注册")
+        raise HTTPException(status_code=400, detail="Email already registered")
 
-    # 创建新用户
     hashed_password = get_password_hash(user_data.password)
     new_user = User(
         username=user_data.username,
@@ -58,9 +55,9 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)) ->
     
     return new_user
 
-@router.get("/me", response_model=UserResponse, summary="获取当前用户信息")
+@router.get("/me", response_model=UserResponse, summary="Get current user info")
 async def get_current_user_info(
     current_user: User = Depends(get_current_user)
 ) -> UserResponse:
-    """获取当前登录用户的详细信息"""
+    """Get detailed information of the currently logged in user"""
     return current_user

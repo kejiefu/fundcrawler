@@ -54,7 +54,7 @@ export const dashboardAPI = {
 }
 
 export const menusAPI = {
-  getMenus: () => api.get('/menus'),
+  getMenus: () => api.get('/menus/'),
   getAllMenus: () => api.get('/menus/all'),
   getMenu: (menuId) => api.get(`/menus/${menuId}`),
   createMenu: (menuData) => api.post('/menus', menuData),

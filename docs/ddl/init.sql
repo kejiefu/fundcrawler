@@ -7,17 +7,17 @@
 -- CREATE USER 'admin_app'@'localhost' IDENTIFIED BY 'secure_password_here';
 
 -- 2. 创建数据库
-DROP DATABASE IF EXISTS admin_dashboard;
-CREATE DATABASE admin_dashboard 
+DROP DATABASE IF EXISTS stock_fund_analysis;
+CREATE DATABASE stock_fund_analysis 
 CHARACTER SET utf8mb4 
 COLLATE utf8mb4_unicode_ci;
 
 -- 3. 授予权限（可选）
--- GRANT ALL PRIVILEGES ON admin_dashboard.* TO 'admin_app'@'localhost';
+-- GRANT ALL PRIVILEGES ON stock_fund_analysis.* TO 'admin_app'@'localhost';
 -- FLUSH PRIVILEGES;
 
 -- 4. 使用数据库
-USE admin_dashboard;
+USE stock_fund_analysis;
 
 -- 5. 创建表结构
 SOURCE schema.sql;

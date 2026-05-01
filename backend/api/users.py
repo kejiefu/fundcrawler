@@ -10,63 +10,62 @@ from auth import get_current_active_user, get_password_hash
 router = APIRouter(prefix="/api/users", tags=["Users"])
 
 def check_superuser_permission(user: User) -> None:
-    """检查用户是否具有管理员权限"""
+    """Check if user has admin permissions"""
     if not user.is_superuser:
-        raise HTTPException(status_code=403, detail="权限不足")
+        raise HTTPException(status_code=403, detail="Not enough permissions")
 
 def check_own_resource_permission(current_user: User, resource_id: int) -> None:
-    """检查用户是否有权访问自己的资源（非管理员只能访问自己的数据）"""
+    """Check if user has permission to access own resource"""
     if not current_user.is_superuser and current_user.id != resource_id:
-        raise HTTPException(status_code=403, detail="权限不足")
+        raise HTTPException(status_code=403, detail="Not enough permissions")
 
 async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
-    """根据ID获取用户对象"""
+    """Get user object by ID"""
     result = await db.execute(select(User).where(User.id == user_id))
     return result.scalar_one_or_none()
 
-@router.get("/", response_model=List[UserResponse], summary="获取用户列表")
+@router.get("/", response_model=List[UserResponse], summary="Get user list")
 async def get_users(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> List[UserResponse]:
-    """获取用户列表（仅限管理员）"""
+    """Get user list (admin only)"""
     check_superuser_permission(current_user)
 
     result = await db.execute(select(User).offset(skip).limit(limit))
     return result.scalars().all()
 
-@router.get("/{user_id}", response_model=UserResponse, summary="获取单个用户")
+@router.get("/{user_id}", response_model=UserResponse, summary="Get single user")
 async def get_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> UserResponse:
-    """获取单个用户信息（管理员可访问所有用户，普通用户只能访问自己）"""
+    """Get single user info (admin can access all, regular user can access only self)"""
     check_own_resource_permission(current_user, user_id)
 
     user = await get_user_by_id(db, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        raise HTTPException(status_code=404, detail="User not found")
     
     return user
 
-@router.put("/{user_id}", response_model=UserResponse, summary="更新用户信息")
+@router.put("/{user_id}", response_model=UserResponse, summary="Update user info")
 async def update_user(
     user_id: int,
     user_data: UserUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> UserResponse:
-    """更新用户信息（管理员可更新所有用户，普通用户只能更新自己）"""
+    """Update user info (admin can update all, regular user can update only self)"""
     check_own_resource_permission(current_user, user_id)
 
     user = await get_user_by_id(db, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        raise HTTPException(status_code=404, detail="User not found")
 
-    # 更新字段
     if user_data.email is not None:
         user.email = user_data.email
     if user_data.full_name is not None:
@@ -81,31 +80,31 @@ async def update_user(
     
     return user
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="删除用户")
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete user")
 async def delete_user(
     user_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> None:
-    """删除用户（仅限管理员，且不能删除自己）"""
+    """Delete user (admin only, cannot delete self)"""
     check_superuser_permission(current_user)
 
     if current_user.id == user_id:
-        raise HTTPException(status_code=400, detail="无法删除自己")
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
 
     user = await get_user_by_id(db, user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
+        raise HTTPException(status_code=404, detail="User not found")
 
     await db.delete(user)
     await db.commit()
 
-@router.get("/stats/count", summary="获取用户统计")
+@router.get("/stats/count", summary="Get user statistics")
 async def get_user_stats(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
-    """获取用户统计数据（仅限管理员）"""
+    """Get user statistics (admin only)"""
     check_superuser_permission(current_user)
 
     result = await db.execute(select(func.count(User.id)))

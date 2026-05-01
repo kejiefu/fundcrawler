@@ -3,11 +3,11 @@ from sqlalchemy.sql import func
 from db.database import Base
 
 class AShareStockBasic(Base):
-    """沪深京 A 股基本信息（东财实时列表字段快照，启动后后台同步写入）"""
+    """A股基本信息表 - 存储沪深京A股实时行情数据"""
 
     __tablename__ = "a_share_stock_basic"
 
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True, comment="主键")
     code = Column(String(10), unique=True, index=True, nullable=False, comment="证券代码")
     name = Column(String(64), nullable=False, comment="证券简称")
     board_label = Column(String(32), nullable=True, comment="板块/市场推断")
@@ -35,7 +35,7 @@ class AShareStockBasic(Base):
     dividend_yield_as_of = Column(
         String(12),
         nullable=True,
-        comment="股息率对应报告期YYYYMMDD；新浪回填时为空",
+        comment="股息率对应报告期YYYYMMDD",
     )
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")

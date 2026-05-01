@@ -17,11 +17,11 @@ async_session_maker = async_sessionmaker(
 )
 
 class Base(DeclarativeBase):
-    """SQLAlchemy 基础模型类"""
+    """SQLAlchemy base model class"""
     pass
 
 async def get_db() -> AsyncSession:
-    """获取数据库会话的依赖注入函数"""
+    """Dependency injection function to get database session"""
     async with async_session_maker() as session:
         try:
             yield session
@@ -33,6 +33,6 @@ async def get_db() -> AsyncSession:
             await session.close()
 
 async def init_db():
-    """初始化数据库表结构"""
+    """Initialize database tables"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

@@ -20,8 +20,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Admin Dashboard API",
-    description="Backend API for Admin Dashboard with user authentication and management",
+    title="Stock Fund Analysis API",
+    description="Backend API for Stock Fund Analysis with user authentication and management",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -42,7 +42,7 @@ app.include_router(stocks.router)
 
 @app.get("/")
 async def root():
-    return {"message": "Admin Dashboard API is running", "version": "1.0.0"}
+    return {"message": "Stock Fund Analysis API is running", "version": "1.0.0"}
 
 @app.get("/health")
 async def health_check():

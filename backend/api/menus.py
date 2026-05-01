@@ -10,16 +10,15 @@ from auth import get_current_active_user, check_superuser_permission
 router = APIRouter(prefix="/api/menus", tags=["Menus"])
 
 async def get_menu_by_id(db: AsyncSession, menu_id: int) -> Menu:
-    """根据ID获取菜单对象"""
+    """Get menu object by ID"""
     result = await db.execute(select(Menu).where(Menu.id == menu_id))
     menu = result.scalar_one_or_none()
     if not menu:
-        raise HTTPException(status_code=404, detail="菜单不存在")
+        raise HTTPException(status_code=404, detail="Menu not found")
     return menu
 
 def build_menu_tree(menus: List[Menu]) -> List[dict]:
-    """将菜单列表构建为树形结构，返回字典列表"""
-    # 将每个菜单转换为字典，避免直接修改SQLAlchemy模型对象
+    """Build menu list to tree structure, return dictionary list"""
     menu_dicts = []
     for menu in menus:
         menu_dict = {
@@ -46,7 +45,6 @@ def build_menu_tree(menus: List[Menu]) -> List[dict]:
         elif menu["parent_id"] in menu_dict_map:
             menu_dict_map[menu["parent_id"]]["children"].append(menu)
     
-    # 按排序字段排序
     def sort_children(menu_list):
         menu_list.sort(key=lambda x: x["order"])
         for menu in menu_list:
@@ -56,46 +54,45 @@ def build_menu_tree(menus: List[Menu]) -> List[dict]:
     
     return sort_children(root_menus)
 
-@router.get("/", response_model=List[MenuResponse], summary="获取菜单列表")
+@router.get("/", response_model=List[MenuResponse], summary="Get menu list")
 async def get_menus(
     db: AsyncSession = Depends(get_db)
 ) -> List[MenuResponse]:
-    """获取所有菜单，返回树形结构（公开接口）"""
+    """Get all menus, return tree structure (public interface)"""
     result = await db.execute(select(Menu).where(Menu.is_active == True))
     menus = result.scalars().all()
     return build_menu_tree(list(menus))
 
-@router.get("/all", response_model=List[MenuResponse], summary="获取所有菜单（包括禁用的）")
+@router.get("/all", response_model=List[MenuResponse], summary="Get all menus (including disabled)")
 async def get_all_menus(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> List[MenuResponse]:
-    """获取所有菜单（包括禁用的），仅限管理员"""
+    """Get all menus including disabled, admin only"""
     check_superuser_permission(current_user)
     
     result = await db.execute(select(Menu))
     menus = result.scalars().all()
     return build_menu_tree(list(menus))
 
-@router.get("/{menu_id}", response_model=MenuResponse, summary="获取单个菜单")
+@router.get("/{menu_id}", response_model=MenuResponse, summary="Get single menu")
 async def get_menu(
     menu_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> MenuResponse:
-    """获取单个菜单详情"""
+    """Get single menu details"""
     return await get_menu_by_id(db, menu_id)
 
-@router.post("/", response_model=MenuResponse, status_code=status.HTTP_201_CREATED, summary="创建菜单")
+@router.post("/", response_model=MenuResponse, status_code=status.HTTP_201_CREATED, summary="Create menu")
 async def create_menu(
     menu_data: MenuCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> MenuResponse:
-    """创建新菜单（仅限管理员）"""
+    """Create new menu (admin only)"""
     check_superuser_permission(current_user)
     
-    # 检查父菜单是否存在
     if menu_data.parent_id is not None:
         await get_menu_by_id(db, menu_data.parent_id)
     
@@ -115,19 +112,18 @@ async def create_menu(
     
     return new_menu
 
-@router.put("/{menu_id}", response_model=MenuResponse, summary="更新菜单")
+@router.put("/{menu_id}", response_model=MenuResponse, summary="Update menu")
 async def update_menu(
     menu_id: int,
     menu_data: MenuUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> MenuResponse:
-    """更新菜单信息（仅限管理员）"""
+    """Update menu info (admin only)"""
     check_superuser_permission(current_user)
     
     menu = await get_menu_by_id(db, menu_id)
     
-    # 更新字段
     if menu_data.name is not None:
         menu.name = menu_data.name
     if menu_data.path is not None:
@@ -135,7 +131,6 @@ async def update_menu(
     if menu_data.icon is not None:
         menu.icon = menu_data.icon
     if menu_data.parent_id is not None:
-        # 检查父菜单是否存在
         if menu_data.parent_id != menu_id:
             await get_menu_by_id(db, menu_data.parent_id)
         menu.parent_id = menu_data.parent_id
@@ -151,22 +146,21 @@ async def update_menu(
     
     return menu
 
-@router.delete("/{menu_id}", status_code=status.HTTP_204_NO_CONTENT, summary="删除菜单")
+@router.delete("/{menu_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete menu")
 async def delete_menu(
     menu_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ) -> None:
-    """删除菜单（仅限管理员）"""
+    """Delete menu (admin only)"""
     check_superuser_permission(current_user)
     
     menu = await get_menu_by_id(db, menu_id)
     
-    # 检查是否有子菜单
     result = await db.execute(select(Menu).where(Menu.parent_id == menu_id))
     children = result.scalars().all()
     if children:
-        raise HTTPException(status_code=400, detail="该菜单下有子菜单，无法删除")
+        raise HTTPException(status_code=400, detail="Menu has children, cannot delete")
     
     await db.delete(menu)
     await db.commit()

@@ -10,22 +10,22 @@ from database import get_db
 from models import User
 from core.config import settings
 
-# 密码加密上下文
+# Password hashing context
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 
-# OAuth2 密码Bearer方案
+# OAuth2 password bearer scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """验证明文密码与哈希密码是否匹配"""
+    """Verify plain password against hashed password"""
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
-    """对密码进行哈希处理"""
+    """Hash password"""
     return pwd_context.hash(password)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    """创建 JWT 访问令牌"""
+    """Create JWT access token"""
     to_encode = data.copy()
     
     if expires_delta:
@@ -41,10 +41,10 @@ async def get_current_user(
     token: str = Depends(oauth2_scheme), 
     db: AsyncSession = Depends(get_db)
 ) -> User:
-    """获取当前登录用户（依赖注入函数）"""
+    """Get current logged in user (dependency injection function)"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="无法验证凭据",
+        detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
     
@@ -67,13 +67,13 @@ async def get_current_user(
 async def get_current_active_user(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    """获取当前活跃用户（依赖注入函数）"""
+    """Get current active user (dependency injection function)"""
     if not current_user.is_active:
-        raise HTTPException(status_code=400, detail="用户未激活")
+        raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
 async def authenticate_user(db: AsyncSession, username: str, password: str) -> Optional[User]:
-    """验证用户凭据，返回用户对象或 None"""
+    """Authenticate user credentials, return user object or None"""
     result = await db.execute(select(User).where(User.username == username))
     user = result.scalar_one_or_none()
     
@@ -86,6 +86,6 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> O
     return user
 
 def check_superuser_permission(user: User) -> None:
-    """检查用户是否具有管理员权限，无权限则抛出异常"""
+    """Check if user has admin permission, throw exception if not"""
     if not user.is_superuser:
-        raise HTTPException(status_code=403, detail="权限不足")
+        raise HTTPException(status_code=403, detail="Not enough permissions")
