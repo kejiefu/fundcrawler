@@ -60,8 +60,23 @@ def _num(v: Any) -> float | None:
 
 
 def _load_spot_dataframe_sync() -> pd.DataFrame:
-    """同步加载 A 股实时行情数据"""
+    """
+    同步加载 A 股实时行情数据
+    优先使用东方财富接口（包含市盈率、市净率等更多字段），失败则回退到新浪接口
+    """
     import akshare as ak
+    
+    # 优先尝试东方财富接口，包含市盈率和市净率数据
+    try:
+        df = ak.stock_zh_a_spot_em()
+        if df is not None and not df.empty:
+            logger.info("使用东方财富接口获取 A 股行情数据")
+            return df
+    except Exception as e:
+        logger.warning(f"东方财富接口调用失败，将回退到新浪接口: {str(e)[:50]}")
+    
+    # 回退到新浪接口
+    logger.info("使用新浪接口获取 A 股行情数据")
     return ak.stock_zh_a_spot()
 
 
@@ -118,9 +133,165 @@ def _remove_market_prefix(code: str) -> str:
     return code.zfill(6)
 
 
+def _load_pe_pb_map_sync() -> dict[str, tuple[float | None, float | None]]:
+    """
+    获取个股市盈率和市净率数据
+    返回: code -> (pe_dynamic, pb)
+    尝试从多个数据源获取，优先使用包含这些字段的接口
+    """
+    import akshare as ak
+    import requests
+    
+    filled: dict[str, tuple[float | None, float | None]] = {}
+    
+    # 优先尝试腾讯股票接口获取市盈率和市净率数据（无需登录）
+    try:
+        # 腾讯股票接口，支持批量查询，格式为 sh600000,sz000001
+        # 注意：腾讯接口仅支持沪市(sh)和深市(sz)股票，不支持北交所(bj)股票
+        url = "https://qt.gtimg.cn/q="
+        
+        # 从新浪接口获取股票列表，用于构建腾讯接口请求
+        df = ak.stock_zh_a_spot()
+        if df is not None and not df.empty:
+            codes = []
+            code_mapping = {}  # 记录原始代码到腾讯格式代码的映射
+            for _, row in df.iterrows():
+                raw_code = row.get("代码")
+                if raw_code is None:
+                    continue
+                code = str(raw_code).strip()
+                code_lower = code.lower()
+                
+                # 提取纯数字代码用于后续匹配
+                if code_lower.startswith('sh'):
+                    pure_code = code[2:].zfill(6)
+                    tencent_code = f"sh{pure_code}"
+                elif code_lower.startswith('sz'):
+                    pure_code = code[2:].zfill(6)
+                    tencent_code = f"sz{pure_code}"
+                elif code_lower.startswith('bj'):
+                    # 北交所股票：腾讯接口不支持，跳过
+                    continue
+                elif code.startswith('6'):
+                    pure_code = code.zfill(6)
+                    tencent_code = f"sh{pure_code}"
+                else:
+                    pure_code = code.zfill(6)
+                    tencent_code = f"sz{pure_code}"
+                
+                codes.append(tencent_code)
+                code_mapping[tencent_code] = pure_code
+            
+            # 分批请求，每批最多60个股票
+            batch_size = 60
+            for i in range(0, len(codes), batch_size):
+                batch = codes[i:i + batch_size]
+                symbols = ','.join(batch)
+                try:
+                    response = requests.get(f"{url}{symbols}", timeout=15)
+                    if response.status_code == 200:
+                        lines = response.text.strip().split('\n')
+                        for line in lines:
+                            if not line:
+                                continue
+                            # 解析格式: v_sh600000="1~浦发银行~600000~..."
+                            line = line.strip()
+                            if '=' not in line:
+                                continue
+                            parts = line.split('=')
+                            if len(parts) < 2:
+                                continue
+                            symbol = parts[0][2:]  # 去掉 v_ 前缀
+                            
+                            # 跳过未匹配的股票（如北交所股票）
+                            if symbol.lower() == 'pv_none_match':
+                                continue
+                            
+                            data = parts[1].strip('"')
+                            fields = data.split('~')
+                            
+                            # 使用 code_mapping 获取纯数字代码
+                            if symbol in code_mapping:
+                                code = code_mapping[symbol]
+                            else:
+                                # 降级处理：直接从 symbol 提取
+                                if symbol.lower().startswith('sh'):
+                                    code = symbol[2:].zfill(6)
+                                elif symbol.lower().startswith('sz'):
+                                    code = symbol[2:].zfill(6)
+                                else:
+                                    continue
+                            
+                            if code in filled:
+                                continue
+                            
+                            # 腾讯接口字段：47=市盈率, 48=市净率
+                            pe = _num(fields[47]) if len(fields) > 47 else None
+                            pb_val = _num(fields[48]) if len(fields) > 48 else None
+                            
+                            if pe is not None or pb_val is not None:
+                                filled[code] = (pe, pb_val)
+                    else:
+                        logger.warning(f"腾讯接口返回状态码: {response.status_code}")
+                        break
+                except Exception as e:
+                    logger.warning(f"腾讯接口批量请求失败: {str(e)[:50]}")
+                    break
+        
+        if filled:
+            logger.info(f"从腾讯接口获取到 {len(filled)} 条市盈率/市净率数据")
+            return filled
+    except Exception as e:
+        logger.warning(f"腾讯接口获取市盈率/市净率失败: {str(e)[:50]}")
+    
+    # 尝试东方财富估值对比接口（包含市盈率和市净率）
+    try:
+        df = ak.stock_zh_valuation_comparison_em()
+        if df is not None and not df.empty:
+            for _, row in df.iterrows():
+                raw_code = row.get("代码")
+                if raw_code is None or (isinstance(raw_code, float) and pd.isna(raw_code)):
+                    continue
+                code = str(raw_code).strip().zfill(6)
+                if code in filled:
+                    continue
+                pe = _num(row.get("市盈率-TTM")) or _num(row.get("市盈率-25E"))
+                pb_val = _num(row.get("市净率-MRQ")) or _num(row.get("市净率-24A"))
+                if pe is not None or pb_val is not None:
+                    filled[code] = (pe, pb_val)
+            logger.info(f"从 stock_zh_valuation_comparison_em 获取到 {len(filled)} 条市盈率/市净率数据")
+            return filled
+    except Exception as e:
+        logger.warning(f"stock_zh_valuation_comparison_em 获取市盈率/市净率失败: {str(e)[:50]}")
+    
+    # 尝试东方财富实时行情接口（包含市盈率和市净率）
+    try:
+        df = ak.stock_zh_a_spot_em()
+        if df is not None and not df.empty:
+            for _, row in df.iterrows():
+                raw_code = row.get("代码")
+                if raw_code is None or (isinstance(raw_code, float) and pd.isna(raw_code)):
+                    continue
+                code = str(raw_code).strip().zfill(6)
+                if code in filled:
+                    continue
+                pe = _num(row.get("市盈率"))
+                pb_val = _num(row.get("市净率"))
+                if pe is not None or pb_val is not None:
+                    filled[code] = (pe, pb_val)
+            logger.info(f"从 stock_zh_a_spot_em 获取到 {len(filled)} 条市盈率/市净率数据")
+            return filled
+    except Exception as e:
+        logger.warning(f"stock_zh_a_spot_em 获取市盈率/市净率失败: {str(e)[:50]}")
+    
+    logger.info(f"市盈率/市净率数据获取完成，共 {len(filled)} 条")
+    return filled
+
+
 def _rows_from_dataframe(
     df: pd.DataFrame,
     dividend_by_code: dict[str, tuple[float | None, str | None]],
+    pe_pb_by_code: dict[str, tuple[float | None, float | None]] | None = None,
 ) -> list[AShareStockBasic]:
     """从 DataFrame 解析并构建 AShareStockBasic 记录列表"""
     rows: list[AShareStockBasic] = []
@@ -137,6 +308,22 @@ def _rows_from_dataframe(
         dividend_code = _remove_market_prefix(code)
         div_pair = dividend_by_code.get(dividend_code, (None, None))
         div_yield, div_as_of = div_pair[0], div_pair[1]
+        
+        # 优先从额外数据源获取市盈率和市净率，其次从主数据源获取
+        pe_dynamic = None
+        pb_val = None
+        if pe_pb_by_code:
+            # 使用移除前缀后的代码查询市盈率和市净率
+            query_code = _remove_market_prefix(code)
+            pe_pb_pair = pe_pb_by_code.get(query_code)
+            if pe_pb_pair:
+                pe_dynamic, pb_val = pe_pb_pair
+        
+        # 如果额外数据源没有，尝试从主数据源获取
+        if pe_dynamic is None:
+            pe_dynamic = _num(r.get("市盈率-动态")) or _num(r.get("市盈率"))
+        if pb_val is None:
+            pb_val = _num(r.get("市净率"))
 
         rows.append(
             AShareStockBasic(
@@ -157,8 +344,8 @@ def _rows_from_dataframe(
                 prev_close=_num(r.get("昨收")),
                 volume_ratio=_num(r.get("量比")),
                 turnover_rate=_num(r.get("换手率")),
-                pe_dynamic=_num(r.get("市盈率-动态")),
-                pb=_num(r.get("市净率")),
+                pe_dynamic=pe_dynamic,
+                pb=pb_val,
                 total_market_cap=_num(r.get("总市值")),
                 circulating_market_cap=_num(r.get("流通市值")),
                 rise_speed=_num(r.get("涨速")),
@@ -192,10 +379,13 @@ async def sync_a_share_stock_basic_once() -> int:
             dividend_map: dict[str, tuple[float | None, str | None]] = await asyncio.to_thread(
                 _load_dividend_yield_map_sync
             )
+            pe_pb_map: dict[str, tuple[float | None, float | None]] = await asyncio.to_thread(
+                _load_pe_pb_map_sync
+            )
             if df is None or df.empty:
                 logger.warning("A 股行情数据为空，跳过入库")
                 return 0
-            records = _rows_from_dataframe(df, dividend_map)
+            records = _rows_from_dataframe(df, dividend_map, pe_pb_map)
             if not records:
                 logger.warning("解析后无有效记录，跳过入库")
                 return 0
@@ -249,8 +439,9 @@ async def sync_a_share_stock_basic_once() -> int:
                             prev_close=insert_stmt.inserted.prev_close,
                             volume_ratio=insert_stmt.inserted.volume_ratio,
                             turnover_rate=insert_stmt.inserted.turnover_rate,
-                            pe_dynamic=insert_stmt.inserted.pe_dynamic,
-                            pb=insert_stmt.inserted.pb,
+                            # 只有当新值不为空时才更新市盈率和市净率，保持已有数据
+                            pe_dynamic=func.ifnull(insert_stmt.inserted.pe_dynamic, AShareStockBasic.pe_dynamic),
+                            pb=func.ifnull(insert_stmt.inserted.pb, AShareStockBasic.pb),
                             total_market_cap=insert_stmt.inserted.total_market_cap,
                             circulating_market_cap=insert_stmt.inserted.circulating_market_cap,
                             rise_speed=insert_stmt.inserted.rise_speed,
