@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from core.config import settings
 from db.database import init_db
 from jobs.a_share_basic_sync import run_a_share_stock_basic_sync_loop
+from jobs.kline_sync import run_kline_sync_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,24 +29,35 @@ async def lifespan():
     await init_db()
     logger.info("Jobs service database initialization complete")
 
-    sync_task: asyncio.Task[None] | None = None
+    tasks: list[asyncio.Task[None]] = []
+    
     if settings.a_share_basic_sync_enabled:
-        sync_task = asyncio.create_task(
+        task = asyncio.create_task(
             run_a_share_stock_basic_sync_loop(
                 settings.a_share_basic_sync_interval_seconds
             )
         )
+        tasks.append(task)
         logger.info(f"A-share basic info sync task started, interval: {settings.a_share_basic_sync_interval_seconds}s")
+
+    if settings.kline_sync_enabled:
+        task = asyncio.create_task(
+            run_kline_sync_loop(
+                settings.kline_sync_interval_seconds
+            )
+        )
+        tasks.append(task)
+        logger.info(f"Kline sync task started, interval: {settings.kline_sync_interval_seconds}s")
 
     try:
         yield
     finally:
-        if sync_task is not None:
-            sync_task.cancel()
+        for task in tasks:
+            task.cancel()
             try:
-                await sync_task
+                await task
             except asyncio.CancelledError:
-                logger.info("A-share basic info sync task stopped")
+                pass
         logger.info("Jobs service stopped")
 
 
@@ -53,8 +65,8 @@ async def main():
     """Main entry point"""
     logger.info("=" * 50)
     logger.info("Jobs service starting...")
-    logger.info(f"A-share sync enabled: {settings.a_share_basic_sync_enabled}")
-    logger.info(f"Sync interval: {settings.a_share_basic_sync_interval_seconds}s")
+    logger.info(f"A-share basic sync enabled: {settings.a_share_basic_sync_enabled}")
+    logger.info(f"Kline sync enabled: {settings.kline_sync_enabled}")
     logger.info("=" * 50)
 
     async with lifespan():

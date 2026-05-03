@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- 由应用后台同步写入；股息率优先东财分红配送，缺失时用新浪年均股息近似
 CREATE TABLE IF NOT EXISTS a_share_stock_basic (
     id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
-    code VARCHAR(10) NOT NULL COMMENT '证券代码',
+    code VARCHAR(10) NOT NULL COMMENT '证券代码（带市场前缀：sh=沪市, sz=深市, bj=北交所，如sh600519）',
     name VARCHAR(64) NOT NULL COMMENT '证券简称',
     board_label VARCHAR(32) DEFAULT NULL COMMENT '板块/市场推断',
     latest_price DECIMAL(14,4) DEFAULT NULL COMMENT '最新价',
@@ -98,7 +98,57 @@ CREATE TABLE IF NOT EXISTS menus (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='菜单表';
 
 -- ==============================================
--- 5. 权限说明
+-- 5. A股K线数据表 (a_share_kline)
+-- ==============================================
+-- 存储日线、周线、月线、年线数据
+CREATE TABLE IF NOT EXISTS a_share_kline (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+    code VARCHAR(10) NOT NULL COMMENT '证券代码（纯数字格式，不带市场前缀，如600519）',
+    trade_date VARCHAR(8) NOT NULL COMMENT '交易日期(YYYYMMDD)',
+    period TINYINT NOT NULL COMMENT '周期类型(1=日线,2=周线,3=月线,4=年线)',
+    open_price DECIMAL(14,4) DEFAULT NULL COMMENT '开盘价',
+    close_price DECIMAL(14,4) DEFAULT NULL COMMENT '收盘价',
+    high_price DECIMAL(14,4) DEFAULT NULL COMMENT '最高价',
+    low_price DECIMAL(14,4) DEFAULT NULL COMMENT '最低价',
+    volume DECIMAL(20,2) DEFAULT NULL COMMENT '成交量(手)',
+    amount DECIMAL(22,2) DEFAULT NULL COMMENT '成交额(元)',
+    prev_close DECIMAL(14,4) DEFAULT NULL COMMENT '前收盘价',
+    change_pct DECIMAL(12,4) DEFAULT NULL COMMENT '涨跌幅%',
+    change_amount DECIMAL(14,4) DEFAULT NULL COMMENT '涨跌额',
+    amplitude DECIMAL(12,4) DEFAULT NULL COMMENT '振幅%',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    
+    UNIQUE KEY uk_a_share_kline_code_date_period (code, trade_date, period),
+    KEY idx_a_share_kline_code (code),
+    KEY idx_a_share_kline_period (period)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='A股K线数据表';
+
+-- ==============================================
+-- 6. A股技术指标表 (a_share_indicator)
+-- ==============================================
+-- 存储KDJ、RSI等技术指标
+CREATE TABLE IF NOT EXISTS a_share_indicator (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+    code VARCHAR(10) NOT NULL COMMENT '证券代码（纯数字格式，不带市场前缀，如600519）',
+    trade_date VARCHAR(8) NOT NULL COMMENT '交易日期(YYYYMMDD)',
+    period TINYINT NOT NULL COMMENT '周期类型(1=日线,2=周线,3=月线,4=年线)',
+    k_value DECIMAL(10,4) DEFAULT NULL COMMENT 'KDJ-K值',
+    d_value DECIMAL(10,4) DEFAULT NULL COMMENT 'KDJ-D值',
+    j_value DECIMAL(10,4) DEFAULT NULL COMMENT 'KDJ-J值',
+    rsi_6 DECIMAL(10,4) DEFAULT NULL COMMENT 'RSI-6日',
+    rsi_12 DECIMAL(10,4) DEFAULT NULL COMMENT 'RSI-12日',
+    rsi_24 DECIMAL(10,4) DEFAULT NULL COMMENT 'RSI-24日',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    
+    UNIQUE KEY uk_a_share_indicator_code_date_period (code, trade_date, period),
+    KEY idx_a_share_indicator_code (code),
+    KEY idx_a_share_indicator_period (period)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='A股技术指标表';
+
+-- ==============================================
+-- 7. 权限说明
 -- ==============================================
 -- 数据库用户权限建议
 -- CREATE USER 'admin_app'@'localhost' IDENTIFIED BY 'your_password';

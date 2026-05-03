@@ -1,29 +1,28 @@
 <template>
-  <div class="app-layout">
-    <!-- 只有已认证时才显示侧边栏 -->
-    <aside v-if="authStore.isAuthenticated" class="sidebar">
+  <el-container class="app-container">
+    <el-aside v-if="authStore.isAuthenticated" width="260px" class="app-sidebar">
       <div class="sidebar-header">
         <h2>Admin Panel</h2>
       </div>
       <SidebarMenu />
       <div class="sidebar-footer">
-        <button @click="handleLogout" class="logout-button">
-          <span class="nav-icon">🚪</span>
+        <el-button @click="handleLogout" class="logout-button" type="text">
+          <el-icon><component :is="Switch" /></el-icon>
           <span>Logout</span>
-        </button>
+        </el-button>
       </div>
-    </aside>
-
-    <main :class="['main-content', { 'full-width': !authStore.isAuthenticated }]">
-      <router-view />
-    </main>
-  </div>
+    </el-aside>
+    <el-main :class="['app-main', { 'full-width': !authStore.isAuthenticated }]">
+      <router-view :key="$route.fullPath" />
+    </el-main>
+  </el-container>
 </template>
 
 <script setup>
 import { useRouter } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import SidebarMenu from './components/SidebarMenu.vue'
+import { Switch } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -50,17 +49,13 @@ body {
   min-height: 100vh;
 }
 
-.app-layout {
-  display: flex;
+.app-container {
   min-height: 100vh;
 }
 
-.sidebar {
-  width: 260px;
+.app-sidebar {
   background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
   color: white;
-  display: flex;
-  flex-direction: column;
   position: fixed;
   height: 100vh;
 }
@@ -73,40 +68,42 @@ body {
 .sidebar-header h2 {
   font-size: 20px;
   font-weight: 600;
+  margin: 0;
 }
 
 .sidebar-footer {
   padding: 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
 }
 
 .logout-button {
   width: 100%;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   padding: 12px 16px;
+  color: white !important;
   background: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: none;
   border-radius: 8px;
-  cursor: pointer;
   transition: all 0.3s ease;
 }
 
 .logout-button:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.2) !important;
 }
 
-.main-content {
-  flex: 1;
+.app-main {
   margin-left: 260px;
-  background: #f5f5f5;
   min-height: 100vh;
+  background: #f5f5f5;
 }
 
-/* 未认证时主内容区全屏显示 */
-.main-content.full-width {
+.app-main.full-width {
   margin-left: 0;
 }
 </style>

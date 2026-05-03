@@ -99,3 +99,53 @@ class StockListResponse(BaseModel):
     items: List[StockBasicResponse]
     page: int
     page_size: int
+
+
+class KlineResponse(BaseModel):
+    id: int
+    code: str
+    trade_date: str
+    period: int
+    open_price: Optional[float] = None
+    close_price: Optional[float] = None
+    high_price: Optional[float] = None
+    low_price: Optional[float] = None
+    volume: Optional[float] = None
+    amount: Optional[float] = None
+    prev_close: Optional[float] = None
+    change_pct: Optional[float] = None
+    change_amount: Optional[float] = None
+    amplitude: Optional[float] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class IndicatorResponse(BaseModel):
+    id: int
+    code: str
+    trade_date: str
+    period: int
+    k_value: Optional[float] = None
+    d_value: Optional[float] = None
+    j_value: Optional[float] = None
+    rsi_6: Optional[float] = None
+    rsi_12: Optional[float] = None
+    rsi_24: Optional[float] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class KlineIndicatorResponse(BaseModel):
+    kline: KlineResponse
+    indicator: Optional[IndicatorResponse] = None
+
+
+class KlineListResponse(BaseModel):
+    total: int
+    items: List[KlineIndicatorResponse]
+    code: str
+    period: int

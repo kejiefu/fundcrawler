@@ -1,57 +1,55 @@
 <template>
-  <div>
-    <header class="top-bar">
-      <h1>{{ pageTitle }}</h1>
-      <div class="user-info">
-        <span>Welcome, {{ user?.full_name || user?.username }}</span>
-      </div>
-    </header>
+  <div class="fund-list">
+    <el-page-header @back="goBack" :content="pageTitle">
+      <template #extra>
+        <span class="user-info">Welcome, {{ user?.full_name || user?.username }}</span>
+      </template>
+    </el-page-header>
 
     <div class="content">
-      <div class="card">
-        <div class="card-header">
-          <h2>{{ pageTitle }}</h2>
-          <button @click="refreshData" class="btn-primary">Refresh</button>
-        </div>
+      <el-card shadow="hover">
+        <template #header>
+          <div class="card-header">
+            <span class="card-title">{{ pageTitle }}</span>
+            <el-button type="primary" @click="refreshData">
+              <el-icon><Refresh /></el-icon>
+              Refresh
+            </el-button>
+          </div>
+        </template>
 
-        <div v-if="loading" class="loading">Loading...</div>
-        <div v-else-if="error" class="error">{{ error }}</div>
-        <table v-else class="funds-table">
-          <thead>
-            <tr>
-              <th>基金代码</th>
-              <th>基金名称</th>
-              <th>基金类型</th>
-              <th>单位净值</th>
-              <th>累计净值</th>
-              <th>日涨跌幅</th>
-              <th>更新时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="fund in funds" :key="fund.code">
-              <td>{{ fund.code }}</td>
-              <td>{{ fund.name }}</td>
-              <td>
-                <span :class="['type-badge', getFundTypeClass(fund.type)]">
-                  {{ fund.type }}
-                </span>
-              </td>
-              <td>{{ fund.nav }}</td>
-              <td>{{ fund.acc_nav }}</td>
-              <td>
-                <span :class="[getChangeClass(fund.change)]">
-                  {{ fund.change >= 0 ? '+' : '' }}{{ fund.change }}%
-                </span>
-              </td>
-              <td>{{ formatDate(fund.update_time) }}</td>
-            </tr>
-            <tr v-if="funds.length === 0">
-              <td colspan="7" class="no-data">No data available</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+        <el-table
+          v-loading="loading"
+          :data="funds"
+          border
+          style="width: 100%"
+          :empty-text="error || 'No data available'"
+        >
+          <el-table-column prop="code" label="基金代码" />
+          <el-table-column prop="name" label="基金名称" />
+          <el-table-column prop="type" label="基金类型">
+            <template #default="scope">
+              <el-tag :type="scope.row.type === 'Stock' ? 'primary' : 'success'">
+                {{ scope.row.type }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="nav" label="单位净值" />
+          <el-table-column prop="acc_nav" label="累计净值" />
+          <el-table-column prop="change" label="日涨跌幅">
+            <template #default="scope">
+              <span :class="scope.row.change >= 0 ? 'text-red' : 'text-green'">
+                {{ scope.row.change >= 0 ? '+' : '' }}{{ scope.row.change }}%
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="update_time" label="更新时间">
+            <template #default="scope">
+              {{ formatDate(scope.row.update_time) }}
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-card>
     </div>
   </div>
 </template>
@@ -60,6 +58,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { Refresh } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -125,18 +124,14 @@ const refreshData = () => {
   fetchFunds()
 }
 
-const getFundTypeClass = (type) => {
-  return type === 'Stock' ? 'type-stock' : 'type-bond'
-}
-
-const getChangeClass = (change) => {
-  return change >= 0 ? 'change-positive' : 'change-negative'
-}
-
 const formatDate = (dateString) => {
   if (!dateString) return 'N/A'
   const date = new Date(dateString)
   return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+const goBack = () => {
+  router.back()
 }
 
 onMounted(() => {
@@ -150,19 +145,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.top-bar {
-  background: white;
-  padding: 20px 32px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #eee;
-}
-
-.top-bar h1 {
-  font-size: 24px;
-  font-weight: 600;
-  color: #333;
+.fund-list {
+  padding: 24px;
 }
 
 .user-info {
@@ -171,112 +155,25 @@ onMounted(() => {
 }
 
 .content {
-  padding: 32px;
-}
-
-.card {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  overflow: hidden;
+  margin-top: 24px;
 }
 
 .card-header {
-  padding: 20px 24px;
-  border-bottom: 1px solid #eee;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.card-header h2 {
-  font-size: 18px;
+.card-title {
+  font-size: 16px;
   font-weight: 600;
-  color: #333;
 }
 
-.btn-primary {
-  padding: 10px 20px;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.3s ease;
+.text-red {
+  color: #e53935;
 }
 
-.btn-primary:hover {
-  background: #5568d3;
-}
-
-.loading,
-.error,
-.no-data {
-  padding: 40px;
-  text-align: center;
-  color: #666;
-}
-
-.error {
-  color: #e74c3c;
-}
-
-.funds-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.funds-table th,
-.funds-table td {
-  padding: 14px 20px;
-  text-align: left;
-  border-bottom: 1px solid #eee;
-}
-
-.funds-table th {
-  background: #f8f9fa;
-  font-weight: 600;
-  color: #555;
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.funds-table td {
-  color: #333;
-  font-size: 14px;
-}
-
-.funds-table tr:hover {
-  background: #f8f9fa;
-}
-
-.type-badge {
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.type-badge.type-stock {
-  background: rgba(102, 126, 234, 0.15);
-  color: #667eea;
-}
-
-.type-badge.type-bond {
-  background: rgba(72, 199, 142, 0.15);
-  color: #48c78e;
-}
-
-.change-positive {
-  color: #e74c3c;
-  font-weight: 500;
-}
-
-.change-negative {
-  color: #48c78e;
-  font-weight: 500;
+.text-green {
+  color: #43a047;
 }
 </style>

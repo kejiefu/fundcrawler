@@ -61,7 +61,14 @@ const routes = [
     name: 'BlueChipStocks',
     component: () => import('../views/StockListView.vue'),
     meta: { requiresAuth: true }
-  }
+  },
+  {
+    path: '/stocks/detail/:code',
+    name: 'StockDetail',
+    component: () => import('../views/StockDetailSimple.vue'),
+    meta: { requiresAuth: true }
+  },
+  
 ]
 
 const router = createRouter({

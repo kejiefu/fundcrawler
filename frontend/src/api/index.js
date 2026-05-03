@@ -65,7 +65,10 @@ export const menusAPI = {
 export const stocksAPI = {
   getStocks: (params) => api.get('/stocks/', { params }),
   getStock: (code) => api.get(`/stocks/${code}`),
-  getBoards: () => api.get('/stocks/boards')
+  getBoards: () => api.get('/stocks/boards'),
+  getKline: (code, period = 1, limit = 100) => api.get(`/stocks/${code}/kline`, { params: { period, limit } }),
+  syncAllIndicators: (code) => api.post(`/stocks/${code}/sync-all-indicators`),
+  syncRecentData: (code) => api.post(`/stocks/${code}/sync-recent-data`)
 }
 
 export default api

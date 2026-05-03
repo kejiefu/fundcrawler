@@ -16,6 +16,9 @@ class AppSettings(BaseSettings):
     a_share_basic_sync_enabled: bool = True
     a_share_basic_sync_interval_seconds: int = 3600
 
+    kline_sync_enabled: bool = True
+    kline_sync_interval_seconds: int = 86400
+
     @property
     def database_url(self) -> str:
         """Generate database connection URL"""
