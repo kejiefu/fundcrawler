@@ -84,35 +84,15 @@ const fundType = computed(() => {
   return null
 })
 
-const mockFunds = {
-  stock: [
-    { code: '000001', name: '华夏上证50ETF', type: 'Stock', nav: 2.8765, acc_nav: 4.1234, change: 1.23, update_time: new Date().toISOString() },
-    { code: '000002', name: '易方达沪深300ETF', type: 'Stock', nav: 3.4567, acc_nav: 5.2345, change: -0.56, update_time: new Date().toISOString() },
-    { code: '000003', name: '南方中证500ETF', type: 'Stock', nav: 1.2345, acc_nav: 2.3456, change: 0.87, update_time: new Date().toISOString() }
-  ],
-  bond: [
-    { code: 'B0001', name: '国债ETF', type: 'Bond', nav: 1.0567, acc_nav: 1.2345, change: 0.12, update_time: new Date().toISOString() },
-    { code: 'B0002', name: '企业债ETF', type: 'Bond', nav: 1.1234, acc_nav: 1.4567, change: -0.08, update_time: new Date().toISOString() }
-  ],
-  all: [
-    { code: '000001', name: '华夏上证50ETF', type: 'Stock', nav: 2.8765, acc_nav: 4.1234, change: 1.23, update_time: new Date().toISOString() },
-    { code: '000002', name: '易方达沪深300ETF', type: 'Stock', nav: 3.4567, acc_nav: 5.2345, change: -0.56, update_time: new Date().toISOString() },
-    { code: 'B0001', name: '国债ETF', type: 'Bond', nav: 1.0567, acc_nav: 1.2345, change: 0.12, update_time: new Date().toISOString() },
-    { code: 'B0002', name: '企业债ETF', type: 'Bond', nav: 1.1234, acc_nav: 1.4567, change: -0.08, update_time: new Date().toISOString() }
-  ]
-}
-
 const fetchFunds = async () => {
   loading.value = true
   error.value = ''
   try {
-    await new Promise(resolve => setTimeout(resolve, 500))
-
-    if (fundType.value) {
-      funds.value = mockFunds[fundType.value] || []
-    } else {
-      funds.value = mockFunds.all
+    const response = await fetch(`/api/funds${fundType.value ? `?type=${fundType.value}` : ''}`)
+    if (!response.ok) {
+      throw new Error('Failed to fetch funds')
     }
+    funds.value = await response.json()
   } catch (err) {
     error.value = 'Failed to load funds'
   } finally {

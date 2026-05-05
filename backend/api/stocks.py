@@ -6,8 +6,8 @@ from typing import List, Optional
 import logging
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from database import get_db, async_session_maker
-from models import AShareStockBasic, AShareKline, AShareIndicator
-from schemas import StockBasicResponse, StockListResponse, KlineResponse, IndicatorResponse, KlineIndicatorResponse, KlineListResponse
+from models import AShareStockBasic, AShareKline, AShareIndicator, AShareFinancialReport
+from schemas import StockBasicResponse, StockListResponse, KlineResponse, IndicatorResponse, KlineIndicatorResponse, KlineListResponse, FinancialReportResponse, FinancialReportListResponse
 from auth import get_current_active_user
 from core.kline_sync_core import (
     PERIOD_MAP, _convert_code, is_valid_stock_code,
@@ -41,6 +41,12 @@ async def get_stocks(
                 AShareStockBasic.code.like(search_pattern),
                 AShareStockBasic.name.like(search_pattern)
             )
+        )
+    else:
+        query = query.where(
+            ~AShareStockBasic.name.like("%ST%"),
+            ~AShareStockBasic.name.like("%*ST%"),
+            ~AShareStockBasic.name.like("%退市%")
         )
 
     if dividend_yield_min is not None:
@@ -108,16 +114,11 @@ async def get_stock(
     current_user = Depends(get_current_active_user)
 ) -> StockBasicResponse:
     """Get stock detailed info by code"""
-    normalized_code = normalize_stock_code(code)
+    pure_code = extract_pure_code(code)
 
-    query = select(AShareStockBasic).where(AShareStockBasic.code == normalized_code)
+    query = select(AShareStockBasic).where(AShareStockBasic.code == pure_code)
     result = await db.execute(query)
     stock = result.scalar_one_or_none()
-
-    if not stock and code != normalized_code:
-        query = select(AShareStockBasic).where(AShareStockBasic.code == code)
-        result = await db.execute(query)
-        stock = result.scalar_one_or_none()
 
     if not stock:
         raise HTTPException(status_code=404, detail="Stock not found")
@@ -300,3 +301,160 @@ async def sync_stock_recent_data(
     detail = {period_names[p]: results[i] for i, p in enumerate([1, 2, 3, 4])}
 
     return {"code": pure_code, "count": total_count, "detail": detail, "message": f"最近数据同步完成，共 {total_count} 条"}
+
+
+@router.get("/{code}/financial-report", response_model=FinancialReportListResponse, summary="获取股票财务报表数据")
+async def get_stock_financial_report(
+    code: str,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+) -> FinancialReportListResponse:
+    """获取股票的季度财务报表数据"""
+    pure_code = extract_pure_code(code)
+
+    query = select(AShareFinancialReport).where(AShareFinancialReport.code == pure_code)\
+        .order_by(AShareFinancialReport.report_period.desc())
+    
+    result = await db.execute(query)
+    reports = result.scalars().all()
+
+    count_query = select(func.count()).select_from(
+        select(AShareFinancialReport).where(AShareFinancialReport.code == pure_code).subquery()
+    )
+    count_result = await db.execute(count_query)
+    total = count_result.scalar() or 0
+
+    return FinancialReportListResponse(
+        total=total,
+        items=[FinancialReportResponse.model_validate(r) for r in reports],
+        code=code
+    )
+
+
+async def _sync_single_stock_financial_report(code: str) -> int:
+    """同步单个股票的财务报表数据"""
+    import sys
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'jobs'))
+    
+    from jobs.financial_report_sync import sync_financial_report_for_stock
+    return await sync_financial_report_for_stock(code)
+
+
+@router.post("/{code}/sync-financial-report", summary="同步股票财务报表数据")
+async def sync_stock_financial_report(
+    code: str,
+    current_user = Depends(get_current_active_user)
+):
+    """同步股票的财务报表数据，获取近一年的季度数据，如果获取到数据，删除之前的数据后再存储"""
+    pure_code = extract_pure_code(code)
+    
+    result = await _sync_single_stock_financial_report(pure_code)
+    
+    logger.info(f"同步 {pure_code} 财务报表数据，写入 {result} 条")
+    
+    return {"code": pure_code, "count": result, "message": f"财务报表数据同步完成，共 {result} 条"}
+
+
+@router.post("/{code}/sync-basic", summary="同步股票基础数据")
+async def sync_stock_basic(
+    code: str,
+    current_user = Depends(get_current_active_user)
+):
+    """同步单只股票的基础数据（包括最新价、涨跌幅、股息率等）"""
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'jobs'))
+    
+    from jobs.a_share_basic_sync import _get_single_stock_data_sync, _get_single_stock_dividend_sync, _get_single_stock_pe_pb_sync, _infer_board_label, _num
+    
+    pure_code = extract_pure_code(code)
+    
+    try:
+        stock_data = await asyncio.to_thread(_get_single_stock_data_sync, pure_code)
+        if not stock_data:
+            raise HTTPException(status_code=404, detail=f"未找到股票 {pure_code}")
+        
+        dividend_amount, _ = await asyncio.to_thread(_get_single_stock_dividend_sync, pure_code)
+        pe_dynamic, pb = await asyncio.to_thread(_get_single_stock_pe_pb_sync, pure_code)
+        
+        latest_price = _num(stock_data.get("最新价")) or _num(stock_data.get("close"))
+        
+        dividend_yield = None
+        if dividend_amount and latest_price and latest_price > 0:
+            dividend_yield = round((dividend_amount / latest_price) * 100, 4)
+        
+        board_label = _infer_board_label(pure_code)
+        
+        async with async_session_maker() as session:
+            insert_stmt = mysql_insert(AShareStockBasic).values(
+                code=pure_code,
+                name=stock_data.get("名称") or stock_data.get("name") or "未知",
+                board_label=board_label,
+                dividend_yield=dividend_yield,
+                dividend_yield_as_of=None,
+                latest_price=latest_price,
+                change_pct=_num(stock_data.get("涨跌幅")),
+                change_amount=_num(stock_data.get("涨跌额")),
+                volume=_num(stock_data.get("成交量")),
+                amount=_num(stock_data.get("成交额")),
+                amplitude=_num(stock_data.get("振幅")),
+                high=_num(stock_data.get("最高")),
+                low=_num(stock_data.get("最低")),
+                open_price=_num(stock_data.get("今开")),
+                prev_close=_num(stock_data.get("昨收")),
+                volume_ratio=_num(stock_data.get("量比")),
+                turnover_rate=_num(stock_data.get("换手率")),
+                pe_dynamic=pe_dynamic,
+                pb=pb,
+                total_market_cap=_num(stock_data.get("总市值")),
+                circulating_market_cap=_num(stock_data.get("流通市值")),
+                rise_speed=_num(stock_data.get("涨速")),
+                change_5min=_num(stock_data.get("5分钟涨跌幅")),
+                change_60d=_num(stock_data.get("60日涨跌幅")),
+                change_ytd=_num(stock_data.get("年初至今涨跌幅")),
+            )
+            on_conflict_stmt = insert_stmt.on_duplicate_key_update(
+                name=insert_stmt.inserted.name,
+                board_label=insert_stmt.inserted.board_label,
+                dividend_yield=insert_stmt.inserted.dividend_yield,
+                dividend_yield_as_of=insert_stmt.inserted.dividend_yield_as_of,
+                latest_price=insert_stmt.inserted.latest_price,
+                change_pct=insert_stmt.inserted.change_pct,
+                change_amount=insert_stmt.inserted.change_amount,
+                volume=insert_stmt.inserted.volume,
+                amount=insert_stmt.inserted.amount,
+                amplitude=insert_stmt.inserted.amplitude,
+                high=insert_stmt.inserted.high,
+                low=insert_stmt.inserted.low,
+                open_price=insert_stmt.inserted.open_price,
+                prev_close=insert_stmt.inserted.prev_close,
+                volume_ratio=insert_stmt.inserted.volume_ratio,
+                turnover_rate=insert_stmt.inserted.turnover_rate,
+                pe_dynamic=insert_stmt.inserted.pe_dynamic,
+                pb=insert_stmt.inserted.pb,
+                total_market_cap=insert_stmt.inserted.total_market_cap,
+                circulating_market_cap=insert_stmt.inserted.circulating_market_cap,
+                rise_speed=insert_stmt.inserted.rise_speed,
+                change_5min=insert_stmt.inserted.change_5min,
+                change_60d=insert_stmt.inserted.change_60d,
+                change_ytd=insert_stmt.inserted.change_ytd,
+                updated_at=func.now(),
+            )
+            await session.execute(on_conflict_stmt)
+            await session.commit()
+        
+        logger.info(f"同步 {pure_code} 基础数据完成")
+        
+        return {
+            "code": pure_code,
+            "name": stock_data.get("名称") or stock_data.get("name") or "未知",
+            "dividend_yield": dividend_yield,
+            "latest_price": latest_price,
+            "message": f"基础数据同步完成"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"同步 {pure_code} 基础数据失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"同步失败: {str(e)}")

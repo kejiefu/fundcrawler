@@ -18,6 +18,10 @@ class AppSettings(BaseSettings):
 
     kline_sync_enabled: bool = True
     kline_sync_interval_seconds: int = 86400
+    kline_sync_min_market_cap_billion: float = 500.0
+
+    financial_report_sync_enabled: bool = True
+    financial_report_sync_interval_seconds: int = 86400
 
     @property
     def database_url(self) -> str:

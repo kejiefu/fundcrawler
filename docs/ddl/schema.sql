@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS users (
 -- 由应用后台同步写入；股息率优先东财分红配送，缺失时用新浪年均股息近似
 CREATE TABLE IF NOT EXISTS a_share_stock_basic (
     id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
-    code VARCHAR(10) NOT NULL COMMENT '证券代码（带市场前缀：sh=沪市, sz=深市, bj=北交所，如sh600519）',
+    code VARCHAR(10) NOT NULL COMMENT '证券代码（纯数字格式，不带市场前缀，如600519）',
     name VARCHAR(64) NOT NULL COMMENT '证券简称',
     board_label VARCHAR(32) DEFAULT NULL COMMENT '板块/市场推断',
     latest_price DECIMAL(14,4) DEFAULT NULL COMMENT '最新价',

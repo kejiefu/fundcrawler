@@ -28,7 +28,7 @@ DEFAULT_MENUS = [
         "permission": "stock.view"
     },
     {
-        "name": "股票基本信息",
+        "name": "股票信息",
         "path": "/stocks/basic",
         "icon": "LineChart",
         "parent_id": 3,

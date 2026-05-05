@@ -29,7 +29,7 @@
 
               <el-input
                 v-model="searchQuery"
-                placeholder="搜索股票代码或名称..."
+                placeholder="代码或名称"
                 @input="handleSearch"
                 class="search-input"
               >
@@ -328,11 +328,29 @@ onMounted(() => {
 }
 
 .search-input {
-  width: 200px;
+  width: 300px;
+}
+
+.search-input ::v-deep .el-input__inner {
+  color: #333;
+  background-color: #fff;
+}
+
+.search-input ::v-deep .el-input__placeholder {
+  color: #999;
 }
 
 .dividend-input {
-  width: 120px;
+  width: 180px;
+}
+
+.dividend-input ::v-deep .el-input__inner {
+  color: #333;
+  background-color: #fff;
+}
+
+.dividend-input ::v-deep .el-input__placeholder {
+  color: #999;
 }
 
 .pagination-container {

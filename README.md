@@ -129,7 +129,7 @@ stock_fund_analysis/
 
 创建数据库：
 ```sql
-CREATE DATABASE admin_dashboard CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE stock_fund_analysis CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
 ### 2. 后端服务启动
@@ -143,9 +143,9 @@ pip install -r requirements.txt
 
 # 配置环境变量（可选）
 # Windows
-set DATABASE_URL=mysql+asyncmy://root:password@localhost:3306/admin_dashboard?charset=utf8mb4
+set DATABASE_URL=mysql+asyncmy://root:password@localhost:3306/stock_fund_analysis?charset=utf8mb4
 # Linux/Mac
-export DATABASE_URL=mysql+asyncmy://root:password@localhost:3306/admin_dashboard?charset=utf8mb4
+export DATABASE_URL=mysql+asyncmy://root:password@localhost:3306/stock_fund_analysis?charset=utf8mb4
 
 # 初始化数据库
 python init_db.py
@@ -184,9 +184,9 @@ pip install -r requirements.txt
 
 # 配置环境变量
 # Windows
-set DATABASE_URL=mysql+asyncmy://root:password@localhost:3306/admin_dashboard?charset=utf8mb4
+set DATABASE_URL=mysql+asyncmy://root:password@localhost:3306/stock_fund_analysis?charset=utf8mb4
 # Linux/Mac
-export DATABASE_URL=mysql+asyncmy://root:password@localhost:3306/admin_dashboard?charset=utf8mb4
+export DATABASE_URL=mysql+asyncmy://root:password@localhost:3306/stock_fund_analysis?charset=utf8mb4
 
 # 启动任务服务
 python main.py

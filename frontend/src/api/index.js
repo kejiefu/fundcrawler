@@ -68,7 +68,10 @@ export const stocksAPI = {
   getBoards: () => api.get('/stocks/boards'),
   getKline: (code, period = 1, limit = 100) => api.get(`/stocks/${code}/kline`, { params: { period, limit } }),
   syncAllIndicators: (code) => api.post(`/stocks/${code}/sync-all-indicators`),
-  syncRecentData: (code) => api.post(`/stocks/${code}/sync-recent-data`)
+  syncRecentData: (code) => api.post(`/stocks/${code}/sync-recent-data`),
+  getFinancialReport: (code) => api.get(`/stocks/${code}/financial-report`),
+  syncFinancialReport: (code) => api.post(`/stocks/${code}/sync-financial-report`),
+  syncBasicData: (code) => api.post(`/stocks/${code}/sync-basic`)
 }
 
 export default api

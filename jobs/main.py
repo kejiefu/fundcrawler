@@ -12,6 +12,7 @@ from core.config import settings
 from db.database import init_db
 from jobs.a_share_basic_sync import run_a_share_stock_basic_sync_loop
 from jobs.kline_sync import run_kline_sync_loop
+from jobs.financial_report_sync import run_financial_report_sync_loop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +31,7 @@ async def lifespan():
     logger.info("Jobs service database initialization complete")
 
     tasks: list[asyncio.Task[None]] = []
+    startup_delay = 3
     
     if settings.a_share_basic_sync_enabled:
         task = asyncio.create_task(
@@ -39,6 +41,7 @@ async def lifespan():
         )
         tasks.append(task)
         logger.info(f"A-share basic info sync task started, interval: {settings.a_share_basic_sync_interval_seconds}s")
+        await asyncio.sleep(startup_delay)
 
     if settings.kline_sync_enabled:
         task = asyncio.create_task(
@@ -48,6 +51,16 @@ async def lifespan():
         )
         tasks.append(task)
         logger.info(f"Kline sync task started, interval: {settings.kline_sync_interval_seconds}s")
+        await asyncio.sleep(startup_delay)
+
+    if settings.financial_report_sync_enabled:
+        task = asyncio.create_task(
+            run_financial_report_sync_loop(
+                settings.financial_report_sync_interval_seconds
+            )
+        )
+        tasks.append(task)
+        logger.info(f"Financial report sync task started, interval: {settings.financial_report_sync_interval_seconds}s")
 
     try:
         yield
@@ -67,6 +80,7 @@ async def main():
     logger.info("Jobs service starting...")
     logger.info(f"A-share basic sync enabled: {settings.a_share_basic_sync_enabled}")
     logger.info(f"Kline sync enabled: {settings.kline_sync_enabled}")
+    logger.info(f"Financial report sync enabled: {settings.financial_report_sync_enabled}")
     logger.info("=" * 50)
 
     async with lifespan():

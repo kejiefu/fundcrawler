@@ -2,8 +2,8 @@
   <div class="login-container">
     <el-card class="login-card" shadow="hover">
       <div class="login-header">
-        <h1>Admin Dashboard</h1>
-        <p>Sign in to your account</p>
+        <h1>Stock Fund Analysis</h1>
+        <p>股票基金分析系统</p>
       </div>
 
       <el-form @submit.prevent="handleLogin" :model="loginForm" class="login-form">

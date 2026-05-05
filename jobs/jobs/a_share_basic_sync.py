@@ -53,9 +53,31 @@ def _num(v: Any) -> float | None:
         pass
     try:
         x = float(v)
-        if math.isnan(x):
+        if math.isnan(x) or math.isinf(x):
             return None
         return x
+    except (TypeError, ValueError):
+        return None
+
+
+def _validate_dividend_yield(value: float | None) -> float | None:
+    """Validate dividend yield value before database insertion"""
+    if value is None:
+        return None
+    
+    try:
+        value = float(value)
+        if math.isnan(value) or math.isinf(value):
+            return None
+        
+        max_value = 99999999.9999
+        min_value = -99999999.9999
+        
+        if value > max_value or value < min_value:
+            logger.debug(f"Dividend yield {value} out of range, setting to None")
+            return None
+        
+        return round(value, 4)
     except (TypeError, ValueError):
         return None
 
@@ -79,6 +101,76 @@ def _load_spot_dataframe_sync() -> pd.DataFrame:
     return ak.stock_zh_a_spot()
 
 
+def _get_single_stock_data_sync(code: str) -> dict | None:
+    """
+    Get realtime data for a single stock
+    :param code: Pure stock code (6 digits)
+    :return: Dictionary with stock data or None
+    """
+    import akshare as ak
+    
+    code = str(code).strip().zfill(6)
+    
+    try:
+        if code.startswith('6'):
+            df = ak.stock_zh_a_spot_em()
+            if df is not None and not df.empty:
+                df['代码'] = df['代码'].astype(str).str.zfill(6)
+                row = df[df['代码'] == code]
+                if not row.empty:
+                    return row.iloc[0].to_dict()
+        else:
+            df = ak.stock_zh_a_spot()
+            if df is not None and not df.empty:
+                df['代码'] = df['代码'].astype(str).str.zfill(6)
+                row = df[df['代码'] == code]
+                if not row.empty:
+                    return row.iloc[0].to_dict()
+    except Exception as e:
+        logger.warning(f"Failed to get single stock data for {code}: {str(e)[:50]}")
+    
+    return None
+
+
+def _get_single_stock_dividend_sync(code: str) -> tuple[float | None, str | None]:
+    """
+    Get dividend yield for a single stock using Sina's dividend history
+    :param code: Pure stock code (6 digits)
+    :return: (dividend_yield, dividend_date)
+    """
+    return _calculate_recent_year_dividend(code), None
+
+
+def _get_single_stock_pe_pb_sync(code: str) -> tuple[float | None, float | None]:
+    """
+    Get PE and PB for a single stock from Tencent API
+    :param code: Pure stock code (6 digits)
+    :return: (pe_dynamic, pb)
+    """
+    import requests
+    
+    code = str(code).strip().zfill(6)
+    
+    if code.startswith('6'):
+        tencent_code = f"sh{code}"
+    else:
+        tencent_code = f"sz{code}"
+    
+    try:
+        url = f"https://qt.gtimg.cn/q={tencent_code}"
+        response = requests.get(url, timeout=10)
+        data = response.text.split('~')
+        
+        if len(data) >= 30:
+            pe = _num(data[28])
+            pb = _num(data[29])
+            return pe, pb
+    except Exception as e:
+        logger.warning(f"Failed to get PE/PB for {code}: {str(e)[:50]}")
+    
+    return None, None
+
+
 def _candidate_fhps_report_dates() -> list[str]:
     """East Money dividend report dates YYYYMMDD, try from new to old"""
     y = date.today().year
@@ -89,38 +181,124 @@ def _candidate_fhps_report_dates() -> list[str]:
     return out
 
 
-def _load_dividend_yield_map_sync() -> dict[str, tuple[float | None, str | None]]:
+def _calculate_recent_year_dividend(code: str) -> float | None:
     """
-    code -> (dividend yield, report period or None)
-    Uses Sina stock_history_dividend "average yearly dividend"
+    Calculate dividend amount per share based on recent year's dividend records
+    This matches the calculation method used by Sina Finance
+    
+    :param code: Pure stock code (6 digits)
+    :return: Dividend amount per share (Yuan)
+    """
+    import akshare as ak
+    from datetime import datetime, date, timedelta
+    
+    symbol = code
+    
+    try:
+        df = ak.stock_history_dividend_detail(symbol=symbol)
+        if df is None or df.empty:
+            return None
+        
+        if '派息' not in df.columns or '除权除息日' not in df.columns:
+            return None
+        
+        one_year_ago = (datetime.now() - timedelta(days=365)).date()
+        total_div_per_10_share = 0.0
+        
+        for _, row in df.iterrows():
+            ex_date = row.get('除权除息日')
+            if pd.isna(ex_date):
+                continue
+            
+            try:
+                if isinstance(ex_date, str):
+                    ex_date = datetime.strptime(ex_date, '%Y-%m-%d').date()
+                elif isinstance(ex_date, datetime):
+                    ex_date = ex_date.date()
+                elif isinstance(ex_date, pd.Timestamp):
+                    ex_date = ex_date.date()
+                elif isinstance(ex_date, date):
+                    pass
+                else:
+                    continue
+            except:
+                continue
+            
+            if ex_date >= one_year_ago:
+                dividend = _num(row.get('派息'))
+                if dividend is not None and dividend > 0:
+                    total_div_per_10_share += dividend
+        
+        if total_div_per_10_share > 0:
+            return total_div_per_10_share / 10.0
+        
+        return None
+    except Exception as e:
+        logger.debug(f"Failed to get dividend detail for {code}: {str(e)[:30]}")
+        return None
+
+
+def _load_dividend_yield_map_sync() -> dict[str, tuple[float | None, str | None, bool]]:
+    """
+    code -> (dividend amount per share, report period YYYYMMDD or None, is_direct_yield)
+    
+    is_direct_yield: False = value is dividend amount per share (need calculation)
+    
+    Priority: 
+    1. Calculate from Sina stock_history_dividend_detail (most accurate, matches Sina Finance)
+    2. Fallback to East Money stock_fhps_em
+    3. Fallback to Sina stock_history_dividend (annual average)
     """
     import akshare as ak
 
-    filled: dict[str, tuple[float | None, str | None]] = {}
+    filled: dict[str, tuple[float | None, str | None, bool]] = {}
 
     try:
-        df_sina = ak.stock_history_dividend()
+        df_em = ak.stock_fhps_em()
+        if df_em is not None and not df_em.empty and "现金分红-现金分红比例" in df_em.columns:
+            logger.info("Loading East Money stock_fhps_em for base dividend data")
+            
+            for _, row in df_em.iterrows():
+                raw_code = row.get("代码")
+                if raw_code is None or (isinstance(raw_code, float) and pd.isna(raw_code)):
+                    continue
+                code = str(raw_code).strip().zfill(6)
+                if code in filled:
+                    continue
+                
+                div_per_10_share = _num(row.get("现金分红-现金分红比例"))
+                if div_per_10_share is None or div_per_10_share <= 0:
+                    continue
+                
+                div_amount = div_per_10_share / 10.0
+                filled[code] = (div_amount, None, False)
+            
+            logger.info(f"Got {len(filled)} dividend records from East Money")
     except Exception as e:
-        logger.warning("stock_history_dividend not available: %s", str(e)[:50])
-        return filled
+        logger.warning(f"East Money stock_fhps_em failed: {str(e)[:50]}")
 
-    if df_sina is None or df_sina.empty or "年均股息" not in df_sina.columns:
-        logger.warning("stock_history_dividend returns empty or missing field")
-        return filled
+    if not filled:
+        try:
+            df_sina = ak.stock_history_dividend()
+            if df_sina is not None and not df_sina.empty and "年均股息" in df_sina.columns:
+                logger.info("Fallback to Sina stock_history_dividend")
+                
+                for _, row in df_sina.iterrows():
+                    raw = row.get("代码")
+                    if raw is None or (isinstance(raw, float) and pd.isna(raw)):
+                        continue
+                    code = str(raw).strip().zfill(6)
+                    if not code or code in filled:
+                        continue
+                    val = _num(row.get("年均股息"))
+                    if val is None or val <= 0:
+                        continue
+                    filled[code] = (val, None, False)
+                
+                logger.info(f"Got {len(filled)} dividend records from Sina stock_history_dividend")
+        except Exception as e:
+            logger.warning(f"Sina stock_history_dividend failed: {str(e)[:50]}")
 
-    for _, row in df_sina.iterrows():
-        raw = row.get("代码")
-        if raw is None or (isinstance(raw, float) and pd.isna(raw)):
-            continue
-        code = str(raw).strip().zfill(6)
-        if not code or code in filled:
-            continue
-        val = _num(row.get("年均股息"))
-        if val is None:
-            continue
-        filled[code] = (val, None)
-
-    logger.info(f"Got {len(filled)} dividend yield records from stock_history_dividend")
     return filled
 
 
@@ -274,7 +452,7 @@ def _load_pe_pb_map_sync() -> dict[str, tuple[float | None, float | None]]:
 
 def _rows_from_dataframe(
     df: pd.DataFrame,
-    dividend_by_code: dict[str, tuple[float | None, str | None]],
+    dividend_by_code: dict[str, tuple[float | None, str | None, bool]],
     pe_pb_by_code: dict[str, tuple[float | None, float | None]] | None = None,
 ) -> list[AShareStockBasic]:
     """Parse DataFrame and build list of AShareStockBasic records"""
@@ -289,9 +467,24 @@ def _rows_from_dataframe(
             name = ""
         else:
             name = str(name).strip()[:64]
+        
+        latest_price = _num(r.get("最新价"))
+        
         dividend_code = _remove_market_prefix(code)
-        div_pair = dividend_by_code.get(dividend_code, (None, None))
-        div_yield, div_as_of = div_pair[0], div_pair[1]
+        
+        recent_div_amount = _calculate_recent_year_dividend(dividend_code)
+        
+        if recent_div_amount is None:
+            div_triple = dividend_by_code.get(dividend_code, (None, None, False))
+            div_value, div_as_of, is_direct_yield = div_triple[0], div_triple[1], div_triple[2]
+        else:
+            div_value, div_as_of, is_direct_yield = recent_div_amount, None, False
+        
+        dividend_yield = None
+        if div_value is not None and latest_price is not None and latest_price > 0:
+            dividend_yield = (div_value / latest_price) * 100
+        
+        dividend_yield = _validate_dividend_yield(dividend_yield)
         
         pe_dynamic = None
         pb_val = None
@@ -311,9 +504,9 @@ def _rows_from_dataframe(
                 code=code,
                 name=name,
                 board_label=_infer_board_label(code),
-                dividend_yield=div_yield,
+                dividend_yield=dividend_yield,
                 dividend_yield_as_of=div_as_of,
-                latest_price=_num(r.get("最新价")),
+                latest_price=latest_price,
                 change_pct=_num(r.get("涨跌幅")),
                 change_amount=_num(r.get("涨跌额")),
                 volume=_num(r.get("成交量")),
@@ -344,20 +537,22 @@ async def sync_a_share_stock_basic_once() -> int:
     Based on unique constraint on code, update if exists, insert if not
     Returns processed count; logs error and returns 0 on failure
     """
-    max_retries = 3
+    max_retries = 5
     base_delay = 5
 
     for attempt in range(max_retries):
         try:
             if attempt > 0:
                 delay = base_delay * (2 ** attempt) + random.uniform(0, 3)
-                logger.info(f"Retry {attempt + 1}, waiting {delay:.1f}s...")
+                logger.info(f"========== 重试第 {attempt + 1}/{max_retries} 次 ==========")
+                logger.info(f"重试原因: 网络请求失败或数据获取异常")
+                logger.info(f"等待 {delay:.1f} 秒后进行第 {attempt + 1} 次尝试...")
                 await asyncio.sleep(delay)
             else:
                 await asyncio.sleep(random.uniform(1, 3))
 
             df: pd.DataFrame = await asyncio.to_thread(_load_spot_dataframe_sync)
-            dividend_map: dict[str, tuple[float | None, str | None]] = await asyncio.to_thread(
+            dividend_map: dict[str, tuple[float | None, str | None, bool]] = await asyncio.to_thread(
                 _load_dividend_yield_map_sync
             )
             pe_pb_map: dict[str, tuple[float | None, float | None]] = await asyncio.to_thread(
@@ -437,9 +632,11 @@ async def sync_a_share_stock_basic_once() -> int:
             logger.info("A-share basic info synced, total %s records", len(records))
             return len(records)
         except Exception as e:
-            logger.warning(f"A-share basic info sync attempt {attempt + 1} failed: {str(e)[:100]}")
+            logger.error(f"---------- A-share basic info sync 第 {attempt + 1} 次尝试失败 ----------")
+            logger.error(f"失败原因: {str(e)[:200]}")
+            logger.error(f"剩余重试次数: {max_retries - attempt - 1}")
             if attempt == max_retries - 1:
-                logger.exception("A-share basic info sync finally failed")
+                logger.exception("========== A-share basic info sync 所有重试均失败，放弃同步 ==========")
                 return 0
 
 

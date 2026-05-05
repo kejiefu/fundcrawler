@@ -149,3 +149,33 @@ class KlineListResponse(BaseModel):
     items: List[KlineIndicatorResponse]
     code: str
     period: int
+
+
+class FinancialReportResponse(BaseModel):
+    id: int
+    code: str
+    name: Optional[str] = None
+    report_period: str
+    report_type: int
+    eps: Optional[float] = None
+    eps_yoy: Optional[float] = None
+    net_profit: Optional[float] = None
+    net_profit_yoy: Optional[float] = None
+    net_profit_deducted: Optional[float] = None
+    net_profit_deducted_yoy: Optional[float] = None
+    revenue: Optional[float] = None
+    revenue_yoy: Optional[float] = None
+    roe: Optional[float] = None
+    roa: Optional[float] = None
+    gross_margin: Optional[float] = None
+    operating_margin: Optional[float] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FinancialReportListResponse(BaseModel):
+    total: int
+    items: List[FinancialReportResponse]
+    code: str
