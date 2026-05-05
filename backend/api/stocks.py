@@ -42,12 +42,14 @@ async def get_stocks(
                 AShareStockBasic.name.like(search_pattern)
             )
         )
-    else:
-        query = query.where(
-            ~AShareStockBasic.name.like("%ST%"),
-            ~AShareStockBasic.name.like("%*ST%"),
-            ~AShareStockBasic.name.like("%退市%")
-        )
+
+    # 始终过滤掉 ST、*ST、PT 和退市股票
+    query = query.where(
+        ~AShareStockBasic.name.like("%ST%"),
+        ~AShareStockBasic.name.like("%*ST%"),
+        ~AShareStockBasic.name.like("%PT%"),
+        ~AShareStockBasic.name.like("%退市%")
+    )
 
     if dividend_yield_min is not None:
         query = query.where(AShareStockBasic.dividend_yield > dividend_yield_min)

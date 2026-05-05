@@ -82,13 +82,30 @@ def _validate_dividend_yield(value: float | None) -> float | None:
         return None
 
 
+_spot_cache: dict = {"df": None, "timestamp": 0}
+_SPOT_CACHE_TTL = 300
+
+
+def _get_cached_spot_dataframe() -> pd.DataFrame | None:
+    import time
+    current_time = time.time()
+    if _spot_cache["df"] is not None and (current_time - _spot_cache["timestamp"]) < _SPOT_CACHE_TTL:
+        return _spot_cache["df"]
+    df = _load_spot_dataframe_sync()
+    if df is not None and not df.empty:
+        _spot_cache["df"] = df
+        _spot_cache["timestamp"] = current_time
+        logger.info(f"Spot data cached, next refresh after {_SPOT_CACHE_TTL}s")
+    return df
+
+
 def _load_spot_dataframe_sync() -> pd.DataFrame:
     """
     Sync load A-share realtime market data
     Priority: East Money interface (more fields like PE/PB), fallback to Sina
     """
     import akshare as ak
-    
+
     try:
         df = ak.stock_zh_a_spot_em()
         if df is not None and not df.empty:
@@ -96,39 +113,26 @@ def _load_spot_dataframe_sync() -> pd.DataFrame:
             return df
     except Exception as e:
         logger.warning(f"East Money interface failed, fallback to Sina: {str(e)[:50]}")
-    
+
     logger.info("Using Sina interface for A-share data")
     return ak.stock_zh_a_spot()
 
 
 def _get_single_stock_data_sync(code: str) -> dict | None:
     """
-    Get realtime data for a single stock
+    Get realtime data for a single stock (optimized: use cached spot data)
     :param code: Pure stock code (6 digits)
     :return: Dictionary with stock data or None
     """
-    import akshare as ak
-    
     code = str(code).strip().zfill(6)
-    
-    try:
-        if code.startswith('6'):
-            df = ak.stock_zh_a_spot_em()
-            if df is not None and not df.empty:
-                df['代码'] = df['代码'].astype(str).str.zfill(6)
-                row = df[df['代码'] == code]
-                if not row.empty:
-                    return row.iloc[0].to_dict()
-        else:
-            df = ak.stock_zh_a_spot()
-            if df is not None and not df.empty:
-                df['代码'] = df['代码'].astype(str).str.zfill(6)
-                row = df[df['代码'] == code]
-                if not row.empty:
-                    return row.iloc[0].to_dict()
-    except Exception as e:
-        logger.warning(f"Failed to get single stock data for {code}: {str(e)[:50]}")
-    
+
+    df = _get_cached_spot_dataframe()
+    if df is not None and not df.empty:
+        df['代码'] = df['代码'].astype(str).str.zfill(6)
+        row = df[df['代码'] == code]
+        if not row.empty:
+            return row.iloc[0].to_dict()
+
     return None
 
 
@@ -270,8 +274,7 @@ def _load_dividend_yield_map_sync() -> dict[str, tuple[float | None, str | None,
                 if div_per_10_share is None or div_per_10_share <= 0:
                     continue
                 
-                div_amount = div_per_10_share / 10.0
-                filled[code] = (div_amount, None, False)
+                filled[code] = (div_per_10_share / 10.0, None, False)
             
             logger.info(f"Got {len(filled)} dividend records from East Money")
     except Exception as e:
@@ -353,54 +356,36 @@ def _load_pe_pb_map_sync() -> dict[str, tuple[float | None, float | None]]:
                 codes.append(tencent_code)
                 code_mapping[tencent_code] = pure_code
             
-            batch_size = 60
-            for i in range(0, len(codes), batch_size):
-                batch = codes[i:i + batch_size]
-                symbols = ','.join(batch)
-                try:
-                    response = requests.get(f"{url}{symbols}", timeout=15)
-                    if response.status_code == 200:
-                        lines = response.text.strip().split('\n')
-                        for line in lines:
-                            if not line:
-                                continue
-                            if '=' not in line:
-                                continue
-                            parts = line.split('=')
-                            if len(parts) < 2:
-                                continue
-                            symbol = parts[0][2:]
-                            
-                            if symbol.lower() == 'pv_none_match':
-                                continue
-                            
-                            data = parts[1].strip('"')
-                            fields = data.split('~')
-                            
-                            if symbol in code_mapping:
-                                code = code_mapping[symbol]
-                            else:
-                                if symbol.lower().startswith('sh'):
-                                    code = symbol[2:].zfill(6)
-                                elif symbol.lower().startswith('sz'):
-                                    code = symbol[2:].zfill(6)
-                                else:
+            if codes:
+                batch_size = 60
+                for i in range(0, len(codes), batch_size):
+                    batch = codes[i:i + batch_size]
+                    full_url = url + ",".join(batch)
+                    
+                    try:
+                        response = requests.get(full_url, timeout=30)
+                        if response.status_code == 200:
+                            lines = response.text.split(";\n")
+                            for line in lines:
+                                if not line.strip():
                                     continue
-                            
-                            if code in filled:
-                                continue
-                            
-                            pe = _num(fields[47]) if len(fields) > 47 else None
-                            pb_val = _num(fields[48]) if len(fields) > 48 else None
-                            
-                            if pe is not None or pb_val is not None:
-                                filled[code] = (pe, pb_val)
-                    else:
-                        logger.warning(f"Tencent interface status: {response.status_code}")
+                                parts = line.split('~')
+                                if len(parts) < 30:
+                                    continue
+                                tencent_code = parts[0].replace('v_sz', 'sz').replace('v_sh', 'sh')
+                                pure_code = code_mapping.get(tencent_code)
+                                if not pure_code:
+                                    continue
+                                pe = _num(parts[28])
+                                pb_val = _num(parts[29])
+                                if pe is not None or pb_val is not None:
+                                    filled[pure_code] = (pe, pb_val)
+                        else:
+                            logger.warning(f"Tencent interface status: {response.status_code}")
+                            break
+                    except Exception as e:
+                        logger.warning(f"Tencent batch request failed: {str(e)[:50]}")
                         break
-                except Exception as e:
-                    logger.warning(f"Tencent batch request failed: {str(e)[:50]}")
-                    break
         
         if filled:
             logger.info(f"Got {len(filled)} PE/PB records from Tencent interface")
@@ -469,22 +454,17 @@ def _rows_from_dataframe(
             name = str(name).strip()[:64]
         
         latest_price = _num(r.get("最新价"))
-        
-        dividend_code = _remove_market_prefix(code)
-        
-        recent_div_amount = _calculate_recent_year_dividend(dividend_code)
-        
-        if recent_div_amount is None:
-            div_triple = dividend_by_code.get(dividend_code, (None, None, False))
-            div_value, div_as_of, is_direct_yield = div_triple[0], div_triple[1], div_triple[2]
-        else:
-            div_value, div_as_of, is_direct_yield = recent_div_amount, None, False
+        total_market_cap = _num(r.get("总市值"))
         
         dividend_yield = None
-        if div_value is not None and latest_price is not None and latest_price > 0:
-            dividend_yield = (div_value / latest_price) * 100
+        div_as_of = None
         
-        dividend_yield = _validate_dividend_yield(dividend_yield)
+        dividend_code = _remove_market_prefix(code)
+        div_triple = dividend_by_code.get(dividend_code, (None, None, False))
+        if div_triple[0] is not None and latest_price is not None and latest_price > 0:
+            dividend_yield = (div_triple[0] / latest_price) * 100
+            dividend_yield = _validate_dividend_yield(dividend_yield)
+            div_as_of = div_triple[1]
         
         pe_dynamic = None
         pb_val = None
@@ -571,11 +551,28 @@ async def sync_a_share_stock_basic_once() -> int:
                 for i in range(0, len(records), chunk_size):
                     chunk = records[i:i + chunk_size]
                     for record in chunk:
+                        logger.info(f"Processing stock {record.code} ({record.name})...")
+                        
+                        current_dividend_yield = record.dividend_yield
+                        
+                        need_precise_calc = False
+                        if record.name and ("ST" not in record.name and "*ST" not in record.name and "PT" not in record.name and "退市" not in record.name):
+                            if record.total_market_cap and record.total_market_cap >= 40000000000:
+                                need_precise_calc = True
+                        
+                        if need_precise_calc and record.latest_price and record.latest_price > 0:
+                            logger.info(f"Getting precise dividend for {record.code} ({record.name})...")
+                            precise_div = await asyncio.to_thread(_calculate_recent_year_dividend, record.code)
+                            if precise_div is not None:
+                                current_dividend_yield = (precise_div / record.latest_price) * 100
+                                current_dividend_yield = _validate_dividend_yield(current_dividend_yield)
+                                logger.info(f"Precise dividend yield for {record.code}: {current_dividend_yield:.2f}%")
+                        
                         insert_stmt = mysql_insert(AShareStockBasic).values(
                             code=record.code,
                             name=record.name,
                             board_label=record.board_label,
-                            dividend_yield=record.dividend_yield,
+                            dividend_yield=current_dividend_yield,
                             dividend_yield_as_of=record.dividend_yield_as_of,
                             latest_price=record.latest_price,
                             change_pct=record.change_pct,
@@ -626,6 +623,7 @@ async def sync_a_share_stock_basic_once() -> int:
                             updated_at=func.now(),
                         )
                         await session.execute(on_conflict_stmt)
+                        logger.info(f"Stock {record.code} ({record.name}) upsert successful")
                     await session.commit()
                     logger.info(f"Submitted batch {i // chunk_size + 1}, {min(i + chunk_size, len(records))}/{len(records)} records")
 
@@ -642,32 +640,26 @@ async def sync_a_share_stock_basic_once() -> int:
 
 async def run_a_share_stock_basic_sync_loop(interval_seconds: int) -> None:
     """
-    Periodic sync: sleep for interval_seconds after each execution until task canceled
+    Run A-share basic info sync periodically
+    :param interval_seconds: Sync interval in seconds
     """
-    if interval_seconds < 1:
-        logger.warning(
-            "a_share_basic_sync_interval_seconds=%s invalid, fallback to 3600",
-            interval_seconds,
-        )
-        interval_seconds = 3600
-
-    sync_count = 0
+    logger.info("Starting A-share basic info sync loop, interval: %ds", interval_seconds)
+    
     while True:
         try:
-            sync_count += 1
-            logger.info(f"=== Starting A-share basic info sync #{sync_count} ===")
-            start_time = asyncio.get_event_loop().time()
+            logger.info("=== Starting A-share basic info sync #%d ===", _get_sync_count())
+            count = await sync_a_share_stock_basic_once()
+            logger.info("A-share basic info sync completed, %d records processed", count)
+        except Exception as e:
+            logger.error(f"A-share basic info sync loop error: {str(e)[:200]}")
+        
+        await asyncio.sleep(interval_seconds)
 
-            result = await sync_a_share_stock_basic_once()
 
-            elapsed_time = asyncio.get_event_loop().time() - start_time
-            if result > 0:
-                logger.info(f"=== Sync #{sync_count} complete, updated {result} records, took {elapsed_time:.2f}s ===")
-            else:
-                logger.info(f"=== Sync #{sync_count} complete, no data updated, took {elapsed_time:.2f}s ===")
+_sync_counter = 0
 
-            logger.info(f"Next sync in {interval_seconds // 60} minutes")
-            await asyncio.sleep(interval_seconds)
-        except asyncio.CancelledError:
-            logger.info("A-share basic info periodic sync stopped")
-            raise
+def _get_sync_count() -> int:
+    """Get and increment sync counter"""
+    global _sync_counter
+    _sync_counter += 1
+    return _sync_counter

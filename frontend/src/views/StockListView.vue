@@ -117,6 +117,11 @@
               {{ scope.row.dividend_yield !== null ? scope.row.dividend_yield.toFixed(2) + '%' : '-' }}
             </template>
           </el-table-column>
+          <el-table-column prop="updated_at" label="更新时间">
+            <template #default="scope">
+              {{ formatDateTime(scope.row.updated_at) }}
+            </template>
+          </el-table-column>
         </el-table>
 
         <div v-if="total > 0" class="pagination-container">
@@ -280,6 +285,18 @@ const formatAmount = (amount) => {
   if (amount >= 100000000) return (amount / 100000000).toFixed(2) + '亿'
   if (amount >= 10000) return (amount / 10000).toFixed(2) + '万'
   return amount.toFixed(2)
+}
+
+const formatDateTime = (dateTime) => {
+  if (!dateTime) return '-'
+  const date = new Date(dateTime)
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const seconds = String(date.getSeconds()).padStart(2, '0')
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
 }
 
 onMounted(() => {
