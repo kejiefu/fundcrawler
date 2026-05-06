@@ -266,7 +266,7 @@ def _load_dividend_yield_map_sync() -> dict[str, tuple[float | None, str | None,
                 raw_code = row.get("代码")
                 if raw_code is None or (isinstance(raw_code, float) and pd.isna(raw_code)):
                     continue
-                code = str(raw_code).strip().zfill(6)
+                code = _remove_market_prefix(raw_code)
                 if code in filled:
                     continue
                 
@@ -290,7 +290,7 @@ def _load_dividend_yield_map_sync() -> dict[str, tuple[float | None, str | None,
                     raw = row.get("代码")
                     if raw is None or (isinstance(raw, float) and pd.isna(raw)):
                         continue
-                    code = str(raw).strip().zfill(6)
+                    code = _remove_market_prefix(raw)
                     if not code or code in filled:
                         continue
                     val = _num(row.get("年均股息"))
@@ -392,6 +392,103 @@ def _load_pe_pb_map_sync() -> dict[str, tuple[float | None, float | None]]:
             return filled
     except Exception as e:
         logger.warning(f"Tencent interface failed for PE/PB: {str(e)[:50]}")
+
+
+def _load_market_cap_map_sync() -> dict[str, tuple[float | None, float | None]]:
+    """
+    Get total market cap and circulating market cap from Tencent interface
+    Returns: code -> (total_market_cap, circulating_market_cap)
+    Total market cap unit: 亿
+    """
+    import akshare as ak
+    import requests
+    
+    filled: dict[str, tuple[float | None, float | None]] = {}
+    
+    try:
+        url = "https://qt.gtimg.cn/q="
+        
+        df = ak.stock_zh_a_spot()
+        if df is not None and not df.empty:
+            codes = []
+            code_mapping = {}
+            for _, row in df.iterrows():
+                raw_code = row.get("代码")
+                if raw_code is None:
+                    continue
+                code = str(raw_code).strip()
+                code_lower = code.lower()
+                
+                if code_lower.startswith('sh'):
+                    pure_code = code[2:].zfill(6)
+                    tencent_code = f"sh{pure_code}"
+                elif code_lower.startswith('sz'):
+                    pure_code = code[2:].zfill(6)
+                    tencent_code = f"sz{pure_code}"
+                elif code_lower.startswith('bj'):
+                    continue
+                elif code.startswith('6'):
+                    pure_code = code.zfill(6)
+                    tencent_code = f"sh{pure_code}"
+                else:
+                    pure_code = code.zfill(6)
+                    tencent_code = f"sz{pure_code}"
+                
+                codes.append(tencent_code)
+                code_mapping[tencent_code] = pure_code
+            
+            if codes:
+                batch_size = 60
+                for i in range(0, len(codes), batch_size):
+                    batch = codes[i:i + batch_size]
+                    full_url = url + ",".join(batch)
+                    
+                    try:
+                        response = requests.get(full_url, timeout=30)
+                        if response.status_code == 200:
+                            lines = response.text.split(";\n")
+                            for line in lines:
+                                if not line.strip():
+                                    continue
+                                parts = line.split('~')
+                                if len(parts) < 46:
+                                    continue
+                                tencent_code = parts[0].replace('v_sz', 'sz').replace('v_sh', 'sh')
+                                if '=' in tencent_code:
+                                    tencent_code = tencent_code.split('=')[0]
+                                pure_code = code_mapping.get(tencent_code)
+                                if not pure_code:
+                                    continue
+                                total_cap = _num(parts[44])
+                                circ_cap = _num(parts[45])
+                                if total_cap is not None:
+                                    total_cap = total_cap * 100000000
+                                if circ_cap is not None:
+                                    circ_cap = circ_cap * 100000000
+                                filled[pure_code] = (total_cap, circ_cap)
+                        else:
+                            logger.warning(f"Tencent interface status: {response.status_code}")
+                            break
+                    except Exception as e:
+                        logger.warning(f"Tencent batch request failed for market cap: {str(e)[:50]}")
+                        break
+        
+        if filled:
+            logger.info(f"Got {len(filled)} market cap records from Tencent interface")
+            return filled
+    except Exception as e:
+        logger.warning(f"Tencent interface failed for market cap: {str(e)[:50]}")
+    
+    return filled
+
+
+def _load_pe_pb_map_fallback() -> dict[str, tuple[float | None, float | None]]:
+    """
+    Fallback PE/PB loading from East Money interfaces
+    """
+    import akshare as ak
+    
+    filled: dict[str, tuple[float | None, float | None]] = {}
     
     try:
         df = ak.stock_zh_valuation_comparison_em()
@@ -400,7 +497,7 @@ def _load_pe_pb_map_sync() -> dict[str, tuple[float | None, float | None]]:
                 raw_code = row.get("代码")
                 if raw_code is None or (isinstance(raw_code, float) and pd.isna(raw_code)):
                     continue
-                code = str(raw_code).strip().zfill(6)
+                code = _remove_market_prefix(raw_code)
                 if code in filled:
                     continue
                 pe = _num(row.get("市盈率-TTM")) or _num(row.get("市盈率-动态"))
@@ -419,7 +516,7 @@ def _load_pe_pb_map_sync() -> dict[str, tuple[float | None, float | None]]:
                 raw_code = row.get("代码")
                 if raw_code is None or (isinstance(raw_code, float) and pd.isna(raw_code)):
                     continue
-                code = str(raw_code).strip().zfill(6)
+                code = _remove_market_prefix(raw_code)
                 if code in filled:
                     continue
                 pe = _num(row.get("市盈率-动态")) or _num(row.get("市盈率"))
@@ -439,6 +536,7 @@ def _rows_from_dataframe(
     df: pd.DataFrame,
     dividend_by_code: dict[str, tuple[float | None, str | None, bool]],
     pe_pb_by_code: dict[str, tuple[float | None, float | None]] | None = None,
+    market_cap_by_code: dict[str, tuple[float | None, float | None]] | None = None,
 ) -> list[AShareStockBasic]:
     """Parse DataFrame and build list of AShareStockBasic records"""
     rows: list[AShareStockBasic] = []
@@ -446,7 +544,7 @@ def _rows_from_dataframe(
         raw_code = r.get("代码")
         if raw_code is None or (isinstance(raw_code, float) and pd.isna(raw_code)):
             continue
-        code = str(raw_code).strip().zfill(6)
+        code = _remove_market_prefix(raw_code)
         name = r.get("名称")
         if name is None or (isinstance(name, float) and pd.isna(name)):
             name = ""
@@ -454,13 +552,23 @@ def _rows_from_dataframe(
             name = str(name).strip()[:64]
         
         latest_price = _num(r.get("最新价"))
+        
         total_market_cap = _num(r.get("总市值"))
+        circulating_market_cap = _num(r.get("流通市值"))
+        
+        if market_cap_by_code:
+            cap_pair = market_cap_by_code.get(code)
+            if cap_pair:
+                cap_total, cap_circ = cap_pair
+                if cap_total is not None:
+                    total_market_cap = cap_total
+                if cap_circ is not None:
+                    circulating_market_cap = cap_circ
         
         dividend_yield = None
         div_as_of = None
         
-        dividend_code = _remove_market_prefix(code)
-        div_triple = dividend_by_code.get(dividend_code, (None, None, False))
+        div_triple = dividend_by_code.get(code, (None, None, False))
         if div_triple[0] is not None and latest_price is not None and latest_price > 0:
             dividend_yield = (div_triple[0] / latest_price) * 100
             dividend_yield = _validate_dividend_yield(dividend_yield)
@@ -469,8 +577,7 @@ def _rows_from_dataframe(
         pe_dynamic = None
         pb_val = None
         if pe_pb_by_code:
-            query_code = _remove_market_prefix(code)
-            pe_pb_pair = pe_pb_by_code.get(query_code)
+            pe_pb_pair = pe_pb_by_code.get(code)
             if pe_pb_pair:
                 pe_dynamic, pb_val = pe_pb_pair
         
@@ -538,10 +645,13 @@ async def sync_a_share_stock_basic_once() -> int:
             pe_pb_map: dict[str, tuple[float | None, float | None]] = await asyncio.to_thread(
                 _load_pe_pb_map_sync
             )
+            market_cap_map: dict[str, tuple[float | None, float | None]] = await asyncio.to_thread(
+                _load_market_cap_map_sync
+            )
             if df is None or df.empty:
                 logger.warning("A-share market data empty, skip storage")
                 return 0
-            records = _rows_from_dataframe(df, dividend_map, pe_pb_map)
+            records = _rows_from_dataframe(df, dividend_map, pe_pb_map, market_cap_map)
             if not records:
                 logger.warning("No valid records after parsing, skip storage")
                 return 0
@@ -557,14 +667,18 @@ async def sync_a_share_stock_basic_once() -> int:
                         
                         need_precise_calc = False
                         if record.name and ("ST" not in record.name and "*ST" not in record.name and "PT" not in record.name and "退市" not in record.name):
-                            if record.total_market_cap and record.total_market_cap >= 40000000000:
+                            if record.total_market_cap:
+                                if record.total_market_cap >= 40000000000:
+                                    need_precise_calc = True
+                            else:
                                 need_precise_calc = True
                         
                         if need_precise_calc and record.latest_price and record.latest_price > 0:
                             logger.info(f"Getting precise dividend for {record.code} ({record.name})...")
                             precise_div = await asyncio.to_thread(_calculate_recent_year_dividend, record.code)
                             if precise_div is not None:
-                                current_dividend_yield = (precise_div / record.latest_price) * 100
+                                latest_price_float = float(record.latest_price) if hasattr(record.latest_price, '__float__') else float(record.latest_price)
+                                current_dividend_yield = (precise_div / latest_price_float) * 100
                                 current_dividend_yield = _validate_dividend_yield(current_dividend_yield)
                                 logger.info(f"Precise dividend yield for {record.code}: {current_dividend_yield:.2f}%")
                         
