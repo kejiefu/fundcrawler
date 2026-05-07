@@ -68,6 +68,12 @@ const routes = [
     component: () => import('../views/StockDetailSimple.vue'),
     meta: { requiresAuth: true }
   },
+  {
+    path: '/stocks/dividend',
+    name: 'DividendRecords',
+    component: () => import('../views/DividendRecordView.vue'),
+    meta: { requiresAuth: true }
+  },
   
 ]
 

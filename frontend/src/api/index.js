@@ -71,7 +71,7 @@ export const stocksAPI = {
   syncRecentData: (code) => api.post(`/stocks/${code}/sync-recent-data`),
   getFinancialReport: (code) => api.get(`/stocks/${code}/financial-report`),
   syncFinancialReport: (code) => api.post(`/stocks/${code}/sync-financial-report`),
-  syncBasicData: (code) => api.post(`/stocks/${code}/sync-basic`)
+  getDividendRecords: (params) => api.get('/stocks/dividend-detail', { params })
 }
 
 export default api

@@ -7,10 +7,7 @@
         <span class="stock-name">{{ stock.name }}</span>
       </div>
       <div class="sync-buttons">
-        <button @click="syncBasicData" :disabled="syncingBasic" class="btn-sync btn-sync-basic">
-          {{ syncingBasic ? '同步中...' : '同步基础数据' }}
-        </button>
-        <button @click="syncAllIndicators" :disabled="syncing" class="btn-sync">
+<button @click="syncAllIndicators" :disabled="syncing" class="btn-sync">
           {{ syncing ? '同步中...' : '同步全部指标' }}
         </button>
         <button @click="syncRecentData" :disabled="syncing" class="btn-sync">
@@ -126,7 +123,7 @@ const currentPeriod = ref(1)
 const loading = ref(false)
 const error = ref('')
 const syncing = ref(false)
-const syncingBasic = ref(false)
+
 
 const periods = [
   { label: '日线', value: 1 },
@@ -171,21 +168,6 @@ const fetchKlineData = async () => {
     console.error('Kline fetch error:', err)
   } finally {
     loading.value = false
-  }
-}
-
-const syncBasicData = async () => {
-  syncingBasic.value = true
-  error.value = ''
-  try {
-    const response = await stocksAPI.syncBasicData(route.params.code)
-    alert('同步完成: ' + response.data.message)
-    await fetchStockData()
-  } catch (err) {
-    error.value = '同步失败: ' + (err.message || err)
-    console.error('Sync error:', err)
-  } finally {
-    syncingBasic.value = false
   }
 }
 

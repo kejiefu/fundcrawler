@@ -125,7 +125,32 @@ CREATE TABLE IF NOT EXISTS a_share_kline (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='A股K线数据表';
 
 -- ==============================================
--- 6. A股技术指标表 (a_share_indicator)
+-- 6. A股分红详情表 (a_share_dividend_detail)
+-- ==============================================
+-- 存储股票详细分红历史数据，用于计算股息率
+-- 数据来源：交易所官方公告
+CREATE TABLE IF NOT EXISTS a_share_dividend_detail (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+    code VARCHAR(10) NOT NULL COMMENT '证券代码（纯数字格式，不带市场前缀，如600519）',
+    name VARCHAR(64) DEFAULT NULL COMMENT '证券简称',
+    announcement_date VARCHAR(8) DEFAULT NULL COMMENT '公告日期(YYYYMMDD)',
+    bonus_share DECIMAL(10,4) DEFAULT NULL COMMENT '送股(每10股)',
+    transfer_share INT DEFAULT NULL COMMENT '转增(每10股)',
+    dividend DECIMAL(10,4) DEFAULT NULL COMMENT '派息(每10股)',
+    progress VARCHAR(32) DEFAULT NULL COMMENT '进度(预案/实施等)',
+    ex_dividend_date VARCHAR(8) DEFAULT NULL COMMENT '除权除息日(YYYYMMDD)',
+    record_date VARCHAR(8) DEFAULT NULL COMMENT '股权登记日(YYYYMMDD)',
+    bonus_share_list_date VARCHAR(8) DEFAULT NULL COMMENT '红股上市日(YYYYMMDD)',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    
+    UNIQUE KEY uk_dividend_detail_code_date (code, announcement_date, dividend),
+    KEY idx_dividend_detail_code (code),
+    KEY idx_dividend_detail_ex_date (ex_dividend_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='A股分红详情表';
+
+-- ==============================================
+-- 7. A股技术指标表 (a_share_indicator)
 -- ==============================================
 -- 存储KDJ、RSI等技术指标
 CREATE TABLE IF NOT EXISTS a_share_indicator (
@@ -148,7 +173,54 @@ CREATE TABLE IF NOT EXISTS a_share_indicator (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='A股技术指标表';
 
 -- ==============================================
--- 7. 权限说明
+-- 9. 财务报表表 (a_share_financial_report)
+-- ==============================================
+-- 存储季度财务数据
+CREATE TABLE IF NOT EXISTS a_share_financial_report (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+    code VARCHAR(10) NOT NULL COMMENT '证券代码（纯数字格式，不带市场前缀，如600519）',
+    name VARCHAR(64) DEFAULT NULL COMMENT '证券简称',
+    report_period VARCHAR(8) NOT NULL COMMENT '报告期(YYYYMMDD)',
+    report_type TINYINT NOT NULL COMMENT '报告类型(1=一季度,2=半年报,3=三季度,4=年报)',
+    eps DECIMAL(10,4) DEFAULT NULL COMMENT '每股收益(元)',
+    eps_yoy DECIMAL(10,4) DEFAULT NULL COMMENT '每股收益同比增长率(%)',
+    net_profit DECIMAL(20,4) DEFAULT NULL COMMENT '净利润(元)',
+    net_profit_yoy DECIMAL(10,4) DEFAULT NULL COMMENT '净利润同比增长率(%)',
+    net_profit_deducted DECIMAL(20,4) DEFAULT NULL COMMENT '扣非净利润(元)',
+    net_profit_deducted_yoy DECIMAL(10,4) DEFAULT NULL COMMENT '扣非净利润同比增长率(%)',
+    revenue DECIMAL(22,4) DEFAULT NULL COMMENT '营业收入(元)',
+    revenue_yoy DECIMAL(10,4) DEFAULT NULL COMMENT '营业收入同比增长率(%)',
+    roe DECIMAL(10,4) DEFAULT NULL COMMENT '净资产收益率(%)',
+    roa DECIMAL(10,4) DEFAULT NULL COMMENT '总资产收益率(%)',
+    gross_margin DECIMAL(10,4) DEFAULT NULL COMMENT '毛利率(%)',
+    operating_margin DECIMAL(10,4) DEFAULT NULL COMMENT '营业利润率(%)',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    
+    UNIQUE KEY uk_a_share_financial_report_code_period (code, report_period),
+    KEY idx_a_share_financial_report_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='A股财务报表表';
+
+-- ==============================================
+-- 10. 同步进度表 (sync_progress)
+-- ==============================================
+-- 用于断点续传
+CREATE TABLE IF NOT EXISTS sync_progress (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+    task_name VARCHAR(64) NOT NULL COMMENT '任务名称(如:financial_report, kline, stock_basic)',
+    batch_id VARCHAR(36) NOT NULL COMMENT '批次ID(UUID)',
+    current_index INT NOT NULL DEFAULT 0 COMMENT '当前处理到的索引',
+    total_count INT NOT NULL DEFAULT 0 COMMENT '总数量',
+    status VARCHAR(20) NOT NULL DEFAULT 'running' COMMENT '状态(running/completed/failed)',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    
+    UNIQUE KEY uk_sync_progress_task_batch (task_name, batch_id),
+    KEY idx_sync_progress_task_name (task_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='同步进度记录表';
+
+-- ==============================================
+-- 11. 权限说明
 -- ==============================================
 -- 数据库用户权限建议
 -- CREATE USER 'admin_app'@'localhost' IDENTIFIED BY 'your_password';
@@ -156,7 +228,7 @@ CREATE TABLE IF NOT EXISTS a_share_indicator (
 -- FLUSH PRIVILEGES;
 
 -- ==============================================
--- 6. 表结构说明
+-- 12. 表结构说明
 -- ==============================================
 -- 字段说明:
 -- id: 用户唯一标识，自增主键
@@ -170,7 +242,7 @@ CREATE TABLE IF NOT EXISTS a_share_indicator (
 -- updated_at: 记录更新时间
 
 -- ==============================================
--- 7. 索引说明
+-- 13. 索引说明
 -- ==============================================
 -- uk_username: 用户名唯一索引，确保用户名不重复
 -- uk_email: 邮箱唯一索引，确保邮箱不重复

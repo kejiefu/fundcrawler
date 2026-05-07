@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from core.config import settings
 from db.database import init_db
 from jobs.a_share_basic_sync import run_a_share_stock_basic_sync_loop
+from jobs.dividend_detail_sync import run_dividend_detail_sync_loop, sync_dividend_detail
 from jobs.kline_sync import run_kline_sync_loop
 from jobs.financial_report_sync import run_financial_report_sync_loop
 
@@ -33,6 +34,16 @@ async def lifespan():
     tasks: list[asyncio.Task[None]] = []
     startup_delay = 3
     
+    logger.info("=== Starting initial dividend detail sync ===")
+    div_count = await sync_dividend_detail()
+    logger.info(f"Initial dividend detail sync complete, {div_count} records saved")
+    
+    task = asyncio.create_task(
+        run_dividend_detail_sync_loop(3 * 24 * 3600)
+    )
+    tasks.append(task)
+    logger.info("Dividend detail sync task started, interval: 3 days")
+
     if settings.a_share_basic_sync_enabled:
         task = asyncio.create_task(
             run_a_share_stock_basic_sync_loop(

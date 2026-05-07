@@ -151,6 +151,31 @@ class KlineListResponse(BaseModel):
     period: int
 
 
+class DividendDetailResponse(BaseModel):
+    id: int
+    code: str
+    name: Optional[str] = None
+    announcement_date: Optional[str] = None
+    bonus_share: Optional[float] = None
+    transfer_share: Optional[int] = None
+    dividend: Optional[float] = None
+    progress: Optional[str] = None
+    ex_dividend_date: Optional[str] = None
+    record_date: Optional[str] = None
+    bonus_share_list_date: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DividendDetailListResponse(BaseModel):
+    total: int
+    items: List[DividendDetailResponse]
+    page: int
+    page_size: int
+
+
 class FinancialReportResponse(BaseModel):
     id: int
     code: str

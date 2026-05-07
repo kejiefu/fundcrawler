@@ -79,6 +79,30 @@ class AShareStockBasic(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
 
 
+class AShareDividendDetail(Base):
+    """A股分红详情表 - 存储详细分红历史数据"""
+
+    __tablename__ = "a_share_dividend_detail"
+    __table_args__ = (
+        UniqueConstraint("code", "announcement_date", "dividend", name="uk_dividend_detail_code_date"),
+        {'comment': 'A股分红详情表 - 存储详细分红历史数据'},
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
+    code = Column(String(10), nullable=False, comment="证券代码（纯数字格式，不带市场前缀，如600519）")
+    name = Column(String(64), nullable=True, comment="证券简称")
+    announcement_date = Column(String(8), nullable=True, comment="公告日期(YYYYMMDD)")
+    bonus_share = Column(Numeric(10, 4), nullable=True, comment="送股(每10股)")
+    transfer_share = Column(Integer, nullable=True, comment="转增(每10股)")
+    dividend = Column(Numeric(10, 4), nullable=True, comment="派息(每10股)")
+    progress = Column(String(32), nullable=True, comment="进度(预案/实施等)")
+    ex_dividend_date = Column(String(8), nullable=True, comment="除权除息日(YYYYMMDD)")
+    record_date = Column(String(8), nullable=True, comment="股权登记日(YYYYMMDD)")
+    bonus_share_list_date = Column(String(8), nullable=True, comment="红股上市日(YYYYMMDD)")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), comment="更新时间")
+
+
 class AShareKline(Base):
     """A股K线数据表 - 存储日线、周线、月线、年线数据"""
 

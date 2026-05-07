@@ -1,7 +1,8 @@
 """
-A-share basic info sync: pull full market via AKShare Sina interface, 
+A-share basic info sync: pull full market via AKShare interface, 
 write to a_share_stock_basic table
 Blocking IO (pandas) runs in asyncio.to_thread to avoid blocking event loop
+Dividend data is read from database (populated by dividend_sync task)
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ import asyncio
 import logging
 import math
 import random
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import pandas as pd
@@ -18,7 +19,7 @@ from sqlalchemy import func
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from db.database import async_session_maker
-from db.models import AShareStockBasic
+from db.models import AShareStockBasic, AShareDividendDetail
 
 logger = logging.getLogger(__name__)
 
@@ -136,15 +137,6 @@ def _get_single_stock_data_sync(code: str) -> dict | None:
     return None
 
 
-def _get_single_stock_dividend_sync(code: str) -> tuple[float | None, str | None]:
-    """
-    Get dividend yield for a single stock using Sina's dividend history
-    :param code: Pure stock code (6 digits)
-    :return: (dividend_yield, dividend_date)
-    """
-    return _calculate_recent_year_dividend(code), None
-
-
 def _get_single_stock_pe_pb_sync(code: str) -> tuple[float | None, float | None]:
     """
     Get PE and PB for a single stock from Tencent API
@@ -173,16 +165,6 @@ def _get_single_stock_pe_pb_sync(code: str) -> tuple[float | None, float | None]
         logger.warning(f"Failed to get PE/PB for {code}: {str(e)[:50]}")
     
     return None, None
-
-
-def _candidate_fhps_report_dates() -> list[str]:
-    """East Money dividend report dates YYYYMMDD, try from new to old"""
-    y = date.today().year
-    out: list[str] = []
-    for yr in range(y, y - 4, -1):
-        out.append(f"{yr}1231")
-        out.append(f"{yr}0630")
-    return out
 
 
 def _calculate_recent_year_dividend(code: str) -> float | None:
@@ -240,69 +222,6 @@ def _calculate_recent_year_dividend(code: str) -> float | None:
     except Exception as e:
         logger.debug(f"Failed to get dividend detail for {code}: {str(e)[:30]}")
         return None
-
-
-def _load_dividend_yield_map_sync() -> dict[str, tuple[float | None, str | None, bool]]:
-    """
-    code -> (dividend amount per share, report period YYYYMMDD or None, is_direct_yield)
-    
-    is_direct_yield: False = value is dividend amount per share (need calculation)
-    
-    Priority: 
-    1. Calculate from Sina stock_history_dividend_detail (most accurate, matches Sina Finance)
-    2. Fallback to East Money stock_fhps_em
-    3. Fallback to Sina stock_history_dividend (annual average)
-    """
-    import akshare as ak
-
-    filled: dict[str, tuple[float | None, str | None, bool]] = {}
-
-    try:
-        df_em = ak.stock_fhps_em()
-        if df_em is not None and not df_em.empty and "现金分红-现金分红比例" in df_em.columns:
-            logger.info("Loading East Money stock_fhps_em for base dividend data")
-            
-            for _, row in df_em.iterrows():
-                raw_code = row.get("代码")
-                if raw_code is None or (isinstance(raw_code, float) and pd.isna(raw_code)):
-                    continue
-                code = _remove_market_prefix(raw_code)
-                if code in filled:
-                    continue
-                
-                div_per_10_share = _num(row.get("现金分红-现金分红比例"))
-                if div_per_10_share is None or div_per_10_share <= 0:
-                    continue
-                
-                filled[code] = (div_per_10_share / 10.0, None, False)
-            
-            logger.info(f"Got {len(filled)} dividend records from East Money")
-    except Exception as e:
-        logger.warning(f"East Money stock_fhps_em failed: {str(e)[:50]}")
-
-    if not filled:
-        try:
-            df_sina = ak.stock_history_dividend()
-            if df_sina is not None and not df_sina.empty and "年均股息" in df_sina.columns:
-                logger.info("Fallback to Sina stock_history_dividend")
-                
-                for _, row in df_sina.iterrows():
-                    raw = row.get("代码")
-                    if raw is None or (isinstance(raw, float) and pd.isna(raw)):
-                        continue
-                    code = _remove_market_prefix(raw)
-                    if not code or code in filled:
-                        continue
-                    val = _num(row.get("年均股息"))
-                    if val is None or val <= 0:
-                        continue
-                    filled[code] = (val, None, False)
-                
-                logger.info(f"Got {len(filled)} dividend records from Sina stock_history_dividend")
-        except Exception as e:
-            logger.warning(f"Sina stock_history_dividend failed: {str(e)[:50]}")
-
-    return filled
 
 
 def _remove_market_prefix(code: str) -> str:
@@ -392,6 +311,8 @@ def _load_pe_pb_map_sync() -> dict[str, tuple[float | None, float | None]]:
             return filled
     except Exception as e:
         logger.warning(f"Tencent interface failed for PE/PB: {str(e)[:50]}")
+    
+    return filled
 
 
 def _load_market_cap_map_sync() -> dict[str, tuple[float | None, float | None]]:
@@ -532,6 +453,53 @@ def _load_pe_pb_map_fallback() -> dict[str, tuple[float | None, float | None]]:
     return filled
 
 
+async def _load_dividend_yield_map() -> dict[str, tuple[float | None, str | None, bool]]:
+    """
+    从数据库读取分红数据（从新表 AShareDividendDetail 读取）
+    
+    code -> (dividend amount per share, report period YYYYMMDD or None, is_direct_yield)
+    
+    is_direct_yield: False = value is dividend amount per share (need calculation)
+    """
+    filled: dict[str, tuple[float | None, str | None, bool]] = {}
+    
+    async with async_session_maker() as session:
+        # 从新表 AShareDividendDetail 获取最近一年的分红数据
+        result = await session.execute(
+            AShareDividendDetail.__table__.select()
+            .where(AShareDividendDetail.dividend.isnot(None))
+            .where(AShareDividendDetail.dividend > 0)
+            .where(AShareDividendDetail.progress == '实施')
+        )
+        
+        # 按股票代码分组，计算最近一年的总分红
+        dividend_by_code: dict[str, float] = {}
+        latest_date_by_code: dict[str, str] = {}
+        
+        for row in result:
+            code = row.code
+            dividend = float(row.dividend) if row.dividend else 0
+            
+            # 累加分红金额
+            if code not in dividend_by_code:
+                dividend_by_code[code] = 0
+                latest_date_by_code[code] = row.announcement_date
+            else:
+                dividend_by_code[code] += dividend
+                # 更新最新日期
+                if row.announcement_date and row.announcement_date > latest_date_by_code.get(code, ''):
+                    latest_date_by_code[code] = row.announcement_date
+        
+        # 转换为每股分红
+        for code, total_dividend in dividend_by_code.items():
+            if total_dividend > 0:
+                dividend_per_share = total_dividend / 10.0  # 每10股分红转每股
+                filled[code] = (dividend_per_share, latest_date_by_code.get(code), False)
+    
+    logger.info(f"Loaded {len(filled)} dividend records from AShareDividendDetail")
+    return filled
+
+
 def _rows_from_dataframe(
     df: pd.DataFrame,
     dividend_by_code: dict[str, tuple[float | None, str | None, bool]],
@@ -639,9 +607,7 @@ async def sync_a_share_stock_basic_once() -> int:
                 await asyncio.sleep(random.uniform(1, 3))
 
             df: pd.DataFrame = await asyncio.to_thread(_load_spot_dataframe_sync)
-            dividend_map: dict[str, tuple[float | None, str | None, bool]] = await asyncio.to_thread(
-                _load_dividend_yield_map_sync
-            )
+            dividend_map: dict[str, tuple[float | None, str | None, bool]] = await _load_dividend_yield_map()
             pe_pb_map: dict[str, tuple[float | None, float | None]] = await asyncio.to_thread(
                 _load_pe_pb_map_sync
             )
