@@ -25,6 +25,8 @@ async def get_stocks(
     board_label: Optional[str] = None,
     search: Optional[str] = None,
     dividend_yield_min: Optional[float] = None,
+    sort_by: Optional[str] = Query('updated_at'),
+    sort_order: Optional[str] = Query('desc'),
     db: AsyncSession = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ) -> StockListResponse:
@@ -58,7 +60,19 @@ async def get_stocks(
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
-    query = query.order_by(AShareStockBasic.code).offset(skip).limit(limit)
+    sort_column = AShareStockBasic.updated_at
+    if sort_by == 'code':
+        sort_column = AShareStockBasic.code
+    elif sort_by == 'name':
+        sort_column = AShareStockBasic.name
+    elif sort_by == 'dividend_yield':
+        sort_column = AShareStockBasic.dividend_yield
+    
+    if sort_order == 'asc':
+        query = query.order_by(sort_column.asc()).offset(skip).limit(limit)
+    else:
+        query = query.order_by(sort_column.desc()).offset(skip).limit(limit)
+    
     result = await db.execute(query)
     stocks = result.scalars().all()
 
@@ -90,6 +104,8 @@ async def get_dividend_details(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     search: Optional[str] = None,
+    sort_by: Optional[str] = Query('updated_at'),
+    sort_order: Optional[str] = Query('desc'),
     db: AsyncSession = Depends(get_db),
     current_user = Depends(get_current_active_user)
 ) -> DividendDetailListResponse:
@@ -109,7 +125,19 @@ async def get_dividend_details(
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
-    query = query.order_by(AShareDividendDetail.code, AShareDividendDetail.announcement_date.desc()).offset(skip).limit(limit)
+    sort_column = AShareDividendDetail.updated_at
+    if sort_by == 'code':
+        sort_column = AShareDividendDetail.code
+    elif sort_by == 'announcement_date':
+        sort_column = AShareDividendDetail.announcement_date
+    elif sort_by == 'ex_dividend_date':
+        sort_column = AShareDividendDetail.ex_dividend_date
+    
+    if sort_order == 'asc':
+        query = query.order_by(sort_column.asc()).offset(skip).limit(limit)
+    else:
+        query = query.order_by(sort_column.desc()).offset(skip).limit(limit)
+    
     result = await db.execute(query)
     records = result.scalars().all()
 

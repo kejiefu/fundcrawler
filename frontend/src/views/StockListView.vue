@@ -48,6 +48,32 @@
                 class="dividend-input"
               />
 
+              <el-button
+                type="default"
+                :class="['sort-btn', { 'active': sortBy === 'updated_at' }]"
+                @click="setSort('updated_at')"
+              >
+                <el-icon>
+                  <ArrowUp v-if="sortBy === 'updated_at' && sortOrder === 'asc'" />
+                  <ArrowDown v-else-if="sortBy === 'updated_at'" />
+                  <Clock v-else />
+                </el-icon>
+                {{ sortBy === 'updated_at' ? (sortOrder === 'asc' ? '更新时间正序' : '更新时间倒序') : '更新时间' }}
+              </el-button>
+
+              <el-button
+                type="default"
+                :class="['sort-btn', { 'active': sortBy === 'dividend_yield' }]"
+                @click="setSort('dividend_yield')"
+              >
+                <el-icon>
+                  <ArrowUp v-if="sortBy === 'dividend_yield' && sortOrder === 'asc'" />
+                  <ArrowDown v-else-if="sortBy === 'dividend_yield'" />
+                  <TrendCharts v-else />
+                </el-icon>
+                {{ sortBy === 'dividend_yield' ? (sortOrder === 'asc' ? '股息率正序' : '股息率倒序') : '股息率' }}
+              </el-button>
+
               <el-button type="primary" @click="refreshData">
                 <el-icon><Refresh /></el-icon>
                 刷新
@@ -145,7 +171,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { stocksAPI } from '../api'
-import { Search, Refresh } from '@element-plus/icons-vue'
+import { Search, Refresh, ArrowUp, ArrowDown, Clock, TrendCharts } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -162,6 +188,8 @@ const dividendFilter = ref('')
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(50)
+const sortBy = ref('updated_at')
+const sortOrder = ref('desc')
 
 let searchTimer = null
 
@@ -195,7 +223,9 @@ const fetchStocks = async () => {
       limit: pageSize.value,
       board_label: selectedBoard.value === 'bluechip' ? undefined : selectedBoard.value || undefined,
       search: searchQuery.value || undefined,
-      dividend_yield_min: dividendMin
+      dividend_yield_min: dividendMin,
+      sort_by: sortBy.value,
+      sort_order: sortOrder.value
     }
     const response = await stocksAPI.getStocks(params)
     stocks.value = response.data.items
@@ -241,6 +271,16 @@ const handleDividendChange = () => {
   searchTimer = setTimeout(() => {
     refreshData()
   }, 500)
+}
+
+const setSort = (field) => {
+  if (sortBy.value === field) {
+    sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortBy.value = field
+    sortOrder.value = 'desc'
+  }
+  refreshData()
 }
 
 const handleSizeChange = (size) => {
@@ -358,7 +398,7 @@ onMounted(() => {
 }
 
 .dividend-input {
-  width: 180px;
+  width: 220px;
 }
 
 .dividend-input ::v-deep .el-input__inner {

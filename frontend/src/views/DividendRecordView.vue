@@ -18,6 +18,18 @@
           </el-button>
         </template>
       </el-input>
+
+      <el-button
+        type="default"
+        @click="toggleSortOrder"
+        class="sort-btn"
+      >
+        <el-icon>
+          <ArrowUp v-if="sortOrder === 'asc'" />
+          <ArrowDown v-else />
+        </el-icon>
+        {{ sortOrder === 'asc' ? '更新时间正序' : '更新时间倒序' }}
+      </el-button>
     </div>
 
     <el-table
@@ -101,13 +113,14 @@
 
 <script setup>
 import { ref, reactive } from 'vue';
-import { Search } from '@element-plus/icons-vue';
+import { Search, ArrowUp, ArrowDown } from '@element-plus/icons-vue';
 import { stocksAPI } from '../api';
 
 const loading = ref(false);
 const searchText = ref('');
 const tableData = ref([]);
 const total = ref(0);
+const sortOrder = ref('desc');
 const pagination = reactive({
   page: 1,
   pageSize: 50
@@ -118,7 +131,9 @@ const loadData = async () => {
   try {
     const params = {
       skip: (pagination.page - 1) * pagination.pageSize,
-      limit: pagination.pageSize
+      limit: pagination.pageSize,
+      sort_by: 'updated_at',
+      sort_order: sortOrder.value
     };
     if (searchText.value) {
       params.search = searchText.value;
@@ -126,8 +141,8 @@ const loadData = async () => {
     const response = await stocksAPI.getDividendRecords(params);
     tableData.value = response.data.items;
     total.value = response.data.total;
-    pagination.page = response.data.page;
-    pagination.pageSize = response.data.pageSize;
+    pagination.page = parseInt(response.data.page, 10);
+    pagination.pageSize = parseInt(response.data.page_size, 10);
   } catch (error) {
     console.error('Failed to load dividend records:', error);
     tableData.value = [];
@@ -137,8 +152,14 @@ const loadData = async () => {
   }
 };
 
+const toggleSortOrder = () => {
+  sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc';
+  pagination.page = 1;
+  loadData();
+};
+
 const handleSizeChange = (val) => {
-  pagination.pageSize = val;
+  pagination.pageSize = parseInt(val, 10);
   pagination.page = 1;
   loadData();
 };
@@ -193,6 +214,9 @@ loadData();
 
 .search-bar {
   margin-bottom: 20px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 
 .search-input {
