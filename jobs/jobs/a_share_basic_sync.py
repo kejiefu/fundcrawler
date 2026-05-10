@@ -302,10 +302,24 @@ def _load_tencent_valuation_map_sync() -> dict[str, tuple[float | None, float | 
                     if not pure_code:
                         continue
 
-                    pe = _num(parts[28]) if len(parts) > 28 else None
-                    pb_val = _num(parts[29]) if len(parts) > 29 else None
-                    total_cap = _num(parts[44]) if len(parts) > 44 else None
-                    circ_cap = _num(parts[45]) if len(parts) > 45 else None
+                    # 腾讯接口字段定义（以~分割，索引从0开始）：
+                    # [3] 当前价格
+                    # [31] 涨跌
+                    # [32] 涨跌%
+                    # [33] 最高
+                    # [34] 最低
+                    # [38] 换手率
+                    # [39] 市盈率（动态）
+                    # [43] 振幅
+                    # [44] 流通市值（亿）
+                    # [45] 总市值（亿）
+                    # [46] 市净率
+                    # [47] 涨停价
+                    # [48] 跌停价
+                    pe = _num(parts[39]) if len(parts) > 39 else None
+                    pb_val = _num(parts[46]) if len(parts) > 46 else None
+                    total_cap = _num(parts[45]) if len(parts) > 45 else None
+                    circ_cap = _num(parts[44]) if len(parts) > 44 else None
 
                     if total_cap is not None:
                         total_cap = total_cap * 100000000
