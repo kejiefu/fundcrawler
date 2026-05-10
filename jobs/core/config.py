@@ -13,14 +13,17 @@ class AppSettings(BaseSettings):
 
     debug: bool = False
 
+    # 定时任务开关（默认全部启用，设为 False 可禁用对应任务）
+    dividend_detail_sync_enabled: bool = True
     a_share_basic_sync_enabled: bool = True
+    kline_sync_enabled: bool = True
+    financial_report_sync_enabled: bool = True
+
     a_share_basic_sync_interval_seconds: int = 3600
 
-    kline_sync_enabled: bool = True
     kline_sync_interval_seconds: int = 86400
     kline_sync_min_market_cap_billion: float = 500.0
 
-    financial_report_sync_enabled: bool = True
     financial_report_sync_interval_seconds: int = 86400
 
     @property

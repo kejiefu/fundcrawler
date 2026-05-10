@@ -202,7 +202,7 @@ CREATE TABLE IF NOT EXISTS a_share_financial_report (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='A股财务报表表';
 
 -- ==============================================
--- 10. 同步进度表 (sync_progress)
+-- 9. 同步进度表 (sync_progress)
 -- ==============================================
 -- 用于断点续传
 CREATE TABLE IF NOT EXISTS sync_progress (

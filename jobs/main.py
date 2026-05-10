@@ -33,17 +33,21 @@ async def lifespan():
 
     tasks: list[asyncio.Task[None]] = []
     startup_delay = 3
-    
-    logger.info("=== Starting initial dividend detail sync ===")
-    div_count = await sync_dividend_detail()
-    logger.info(f"Initial dividend detail sync complete, {div_count} records saved")
-    
-    task = asyncio.create_task(
-        run_dividend_detail_sync_loop(3 * 24 * 3600)
-    )
-    tasks.append(task)
-    logger.info("Dividend detail sync task started, interval: 3 days")
 
+    # 分红详情 - 初始同步 + 定时循环
+    if settings.dividend_detail_sync_enabled:
+        logger.info("=== Starting initial dividend detail sync ===")
+        div_count = await sync_dividend_detail()
+        logger.info(f"Initial dividend detail sync complete, {div_count} records saved")
+        task = asyncio.create_task(
+            run_dividend_detail_sync_loop(3 * 24 * 3600)
+        )
+        tasks.append(task)
+        logger.info("Dividend detail sync task started, interval: 3 days")
+    else:
+        logger.info("Dividend detail sync is disabled, skipping")
+
+    # A股基本信息同步
     if settings.a_share_basic_sync_enabled:
         task = asyncio.create_task(
             run_a_share_stock_basic_sync_loop(
@@ -53,7 +57,10 @@ async def lifespan():
         tasks.append(task)
         logger.info(f"A-share basic info sync task started, interval: {settings.a_share_basic_sync_interval_seconds}s")
         await asyncio.sleep(startup_delay)
+    else:
+        logger.info("A-share basic info sync is disabled, skipping")
 
+    # K线同步
     if settings.kline_sync_enabled:
         task = asyncio.create_task(
             run_kline_sync_loop(
@@ -63,7 +70,10 @@ async def lifespan():
         tasks.append(task)
         logger.info(f"Kline sync task started, interval: {settings.kline_sync_interval_seconds}s")
         await asyncio.sleep(startup_delay)
+    else:
+        logger.info("Kline sync is disabled, skipping")
 
+    # 财报同步
     if settings.financial_report_sync_enabled:
         task = asyncio.create_task(
             run_financial_report_sync_loop(
@@ -72,6 +82,8 @@ async def lifespan():
         )
         tasks.append(task)
         logger.info(f"Financial report sync task started, interval: {settings.financial_report_sync_interval_seconds}s")
+    else:
+        logger.info("Financial report sync is disabled, skipping")
 
     try:
         yield
@@ -89,6 +101,7 @@ async def main():
     """Main entry point"""
     logger.info("=" * 50)
     logger.info("Jobs service starting...")
+    logger.info(f"Dividend detail sync enabled: {settings.dividend_detail_sync_enabled}")
     logger.info(f"A-share basic sync enabled: {settings.a_share_basic_sync_enabled}")
     logger.info(f"Kline sync enabled: {settings.kline_sync_enabled}")
     logger.info(f"Financial report sync enabled: {settings.financial_report_sync_enabled}")

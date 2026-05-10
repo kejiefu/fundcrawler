@@ -11,7 +11,7 @@ import asyncio
 import logging
 import math
 import random
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pandas as pd
@@ -20,8 +20,16 @@ from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from db.database import async_session_maker
 from db.models import AShareStockBasic, AShareDividendDetail
+from utils.sync_progress import (
+    create_sync_progress,
+    get_sync_progress,
+    complete_sync_progress,
+    fail_sync_progress,
+)
 
 logger = logging.getLogger(__name__)
+
+TASK_NAME = "a_share_basic"
 
 
 def _infer_board_label(code: str) -> str:
@@ -61,8 +69,25 @@ def _num(v: Any) -> float | None:
         return None
 
 
+def _format_market_cap(value: float | None) -> float | None:
+    """格式化市值数据，四舍五入到2位小数，匹配数据库 Numeric(22,2) 字段精度"""
+    if value is None:
+        return None
+    try:
+        value = float(value)
+        if math.isnan(value) or math.isinf(value):
+            return None
+        return round(value, 2)
+    except (TypeError, ValueError):
+        return None
+
+
 def _validate_dividend_yield(value: float | None) -> float | None:
-    """Validate dividend yield value before database insertion"""
+    """校验股息率值，过滤异常数据
+    
+    A股合理股息率通常在 0%~15%，极端情况下不超过 20%
+    超过 20% 通常意味着数据计算错误（如累加了全部历史分红）
+    """
     if value is None:
         return None
     
@@ -71,11 +96,14 @@ def _validate_dividend_yield(value: float | None) -> float | None:
         if math.isnan(value) or math.isinf(value):
             return None
         
-        max_value = 99999999.9999
-        min_value = -99999999.9999
+        max_yield = 20.0  # A股股息率极少超过20%，超过则标记为异常
+        min_yield = 0.0   # 股息率不应为负数
         
-        if value > max_value or value < min_value:
-            logger.debug(f"Dividend yield {value} out of range, setting to None")
+        if value > max_yield or value < min_yield:
+            logger.warning(
+                f"股息率 {value:.4f}% 超出合理范围 [{min_yield}%, {max_yield}%]，"
+                f"标记为 None（可能数据计算有误）"
+            )
             return None
         
         return round(value, 4)
@@ -135,36 +163,6 @@ def _get_single_stock_data_sync(code: str) -> dict | None:
             return row.iloc[0].to_dict()
 
     return None
-
-
-def _get_single_stock_pe_pb_sync(code: str) -> tuple[float | None, float | None]:
-    """
-    Get PE and PB for a single stock from Tencent API
-    :param code: Pure stock code (6 digits)
-    :return: (pe_dynamic, pb)
-    """
-    import requests
-    
-    code = str(code).strip().zfill(6)
-    
-    if code.startswith('6'):
-        tencent_code = f"sh{code}"
-    else:
-        tencent_code = f"sz{code}"
-    
-    try:
-        url = f"https://qt.gtimg.cn/q={tencent_code}"
-        response = requests.get(url, timeout=10)
-        data = response.text.split('~')
-        
-        if len(data) >= 30:
-            pe = _num(data[28])
-            pb = _num(data[29])
-            return pe, pb
-    except Exception as e:
-        logger.warning(f"Failed to get PE/PB for {code}: {str(e)[:50]}")
-    
-    return None, None
 
 
 def _calculate_recent_year_dividend(code: str) -> float | None:
@@ -232,225 +230,99 @@ def _remove_market_prefix(code: str) -> str:
     return code.zfill(6)
 
 
-def _load_pe_pb_map_sync() -> dict[str, tuple[float | None, float | None]]:
+def _load_tencent_valuation_map_sync() -> dict[str, tuple[float | None, float | None, float | None, float | None]]:
     """
-    Get PE and PB data for individual stocks
-    Returns: code -> (pe_dynamic, pb)
-    Try multiple data sources, prioritize those with these fields
-    """
-    import akshare as ak
-    import requests
-    
-    filled: dict[str, tuple[float | None, float | None]] = {}
-    
-    try:
-        url = "https://qt.gtimg.cn/q="
-        
-        df = ak.stock_zh_a_spot()
-        if df is not None and not df.empty:
-            codes = []
-            code_mapping = {}
-            for _, row in df.iterrows():
-                raw_code = row.get("代码")
-                if raw_code is None:
-                    continue
-                code = str(raw_code).strip()
-                code_lower = code.lower()
-                
-                if code_lower.startswith('sh'):
-                    pure_code = code[2:].zfill(6)
-                    tencent_code = f"sh{pure_code}"
-                elif code_lower.startswith('sz'):
-                    pure_code = code[2:].zfill(6)
-                    tencent_code = f"sz{pure_code}"
-                elif code_lower.startswith('bj'):
-                    continue
-                elif code.startswith('6'):
-                    pure_code = code.zfill(6)
-                    tencent_code = f"sh{pure_code}"
-                else:
-                    pure_code = code.zfill(6)
-                    tencent_code = f"sz{pure_code}"
-                
-                codes.append(tencent_code)
-                code_mapping[tencent_code] = pure_code
-            
-            if codes:
-                batch_size = 60
-                for i in range(0, len(codes), batch_size):
-                    batch = codes[i:i + batch_size]
-                    full_url = url + ",".join(batch)
-                    
-                    try:
-                        response = requests.get(full_url, timeout=30)
-                        if response.status_code == 200:
-                            lines = response.text.split(";\n")
-                            for line in lines:
-                                if not line.strip():
-                                    continue
-                                parts = line.split('~')
-                                if len(parts) < 30:
-                                    continue
-                                tencent_code = parts[0].replace('v_sz', 'sz').replace('v_sh', 'sh')
-                                pure_code = code_mapping.get(tencent_code)
-                                if not pure_code:
-                                    continue
-                                pe = _num(parts[28])
-                                pb_val = _num(parts[29])
-                                if pe is not None or pb_val is not None:
-                                    filled[pure_code] = (pe, pb_val)
-                        else:
-                            logger.warning(f"Tencent interface status: {response.status_code}")
-                            break
-                    except Exception as e:
-                        logger.warning(f"Tencent batch request failed: {str(e)[:50]}")
-                        break
-        
-        if filled:
-            logger.info(f"Got {len(filled)} PE/PB records from Tencent interface")
-            return filled
-    except Exception as e:
-        logger.warning(f"Tencent interface failed for PE/PB: {str(e)[:50]}")
-    
-    return filled
-
-
-def _load_market_cap_map_sync() -> dict[str, tuple[float | None, float | None]]:
-    """
-    Get total market cap and circulating market cap from Tencent interface
-    Returns: code -> (total_market_cap, circulating_market_cap)
-    Total market cap unit: 亿
+    批量从腾讯接口一次性获取 PE/PB/总市值/流通市值，避免重复请求
+    Returns: code -> (pe_dynamic, pb, total_market_cap, circulating_market_cap)
+      - total_market_cap / circulating_market_cap 已从"亿"转换为"元"
     """
     import akshare as ak
     import requests
-    
-    filled: dict[str, tuple[float | None, float | None]] = {}
-    
+
+    result: dict[str, tuple[float | None, float | None, float | None, float | None]] = {}
+    url = "https://qt.gtimg.cn/q="
+
     try:
-        url = "https://qt.gtimg.cn/q="
-        
         df = ak.stock_zh_a_spot()
-        if df is not None and not df.empty:
-            codes = []
-            code_mapping = {}
-            for _, row in df.iterrows():
-                raw_code = row.get("代码")
-                if raw_code is None:
-                    continue
-                code = str(raw_code).strip()
-                code_lower = code.lower()
-                
-                if code_lower.startswith('sh'):
-                    pure_code = code[2:].zfill(6)
-                    tencent_code = f"sh{pure_code}"
-                elif code_lower.startswith('sz'):
-                    pure_code = code[2:].zfill(6)
-                    tencent_code = f"sz{pure_code}"
-                elif code_lower.startswith('bj'):
-                    continue
-                elif code.startswith('6'):
-                    pure_code = code.zfill(6)
-                    tencent_code = f"sh{pure_code}"
-                else:
-                    pure_code = code.zfill(6)
-                    tencent_code = f"sz{pure_code}"
-                
-                codes.append(tencent_code)
-                code_mapping[tencent_code] = pure_code
-            
-            if codes:
-                batch_size = 60
-                for i in range(0, len(codes), batch_size):
-                    batch = codes[i:i + batch_size]
-                    full_url = url + ",".join(batch)
-                    
-                    try:
-                        response = requests.get(full_url, timeout=30)
-                        if response.status_code == 200:
-                            lines = response.text.split(";\n")
-                            for line in lines:
-                                if not line.strip():
-                                    continue
-                                parts = line.split('~')
-                                if len(parts) < 46:
-                                    continue
-                                tencent_code = parts[0].replace('v_sz', 'sz').replace('v_sh', 'sh')
-                                if '=' in tencent_code:
-                                    tencent_code = tencent_code.split('=')[0]
-                                pure_code = code_mapping.get(tencent_code)
-                                if not pure_code:
-                                    continue
-                                total_cap = _num(parts[44])
-                                circ_cap = _num(parts[45])
-                                if total_cap is not None:
-                                    total_cap = total_cap * 100000000
-                                if circ_cap is not None:
-                                    circ_cap = circ_cap * 100000000
-                                filled[pure_code] = (total_cap, circ_cap)
-                        else:
-                            logger.warning(f"Tencent interface status: {response.status_code}")
-                            break
-                    except Exception as e:
-                        logger.warning(f"Tencent batch request failed for market cap: {str(e)[:50]}")
-                        break
-        
-        if filled:
-            logger.info(f"Got {len(filled)} market cap records from Tencent interface")
-            return filled
-    except Exception as e:
-        logger.warning(f"Tencent interface failed for market cap: {str(e)[:50]}")
-    
-    return filled
+        if df is None or df.empty:
+            return result
 
+        codes = []
+        code_mapping = {}
+        for _, row in df.iterrows():
+            raw_code = row.get("代码")
+            if raw_code is None:
+                continue
+            code = str(raw_code).strip()
+            code_lower = code.lower()
 
-def _load_pe_pb_map_fallback() -> dict[str, tuple[float | None, float | None]]:
-    """
-    Fallback PE/PB loading from East Money interfaces
-    """
-    import akshare as ak
-    
-    filled: dict[str, tuple[float | None, float | None]] = {}
-    
-    try:
-        df = ak.stock_zh_valuation_comparison_em()
-        if df is not None and not df.empty:
-            for _, row in df.iterrows():
-                raw_code = row.get("代码")
-                if raw_code is None or (isinstance(raw_code, float) and pd.isna(raw_code)):
-                    continue
-                code = _remove_market_prefix(raw_code)
-                if code in filled:
-                    continue
-                pe = _num(row.get("市盈率-TTM")) or _num(row.get("市盈率-动态"))
-                pb_val = _num(row.get("市净率-MRQ")) or _num(row.get("市净率"))
-                if pe is not None or pb_val is not None:
-                    filled[code] = (pe, pb_val)
-            logger.info(f"Got {len(filled)} PE/PB records from stock_zh_valuation_comparison_em")
-            return filled
+            if code_lower.startswith('sh'):
+                pure_code = code[2:].zfill(6)
+                tencent_code = f"sh{pure_code}"
+            elif code_lower.startswith('sz'):
+                pure_code = code[2:].zfill(6)
+                tencent_code = f"sz{pure_code}"
+            elif code_lower.startswith('bj'):
+                continue
+            elif code.startswith('6'):
+                pure_code = code.zfill(6)
+                tencent_code = f"sh{pure_code}"
+            else:
+                pure_code = code.zfill(6)
+                tencent_code = f"sz{pure_code}"
+
+            codes.append(tencent_code)
+            code_mapping[tencent_code] = pure_code
+
+        if not codes:
+            return result
+
+        batch_size = 60
+        for i in range(0, len(codes), batch_size):
+            batch = codes[i:i + batch_size]
+            full_url = url + ",".join(batch)
+
+            try:
+                response = requests.get(full_url, timeout=30)
+                if response.status_code != 200:
+                    logger.warning(f"腾讯接口响应异常，状态码: {response.status_code}")
+                    break
+
+                lines = response.text.split(";\n")
+                for line in lines:
+                    if not line.strip():
+                        continue
+                    parts = line.split('~')
+
+                    tencent_code_raw = parts[0]
+                    tencent_code = tencent_code_raw.replace('v_sz', 'sz').replace('v_sh', 'sh')
+                    if '=' in tencent_code:
+                        tencent_code = tencent_code.split('=')[0]
+                    pure_code = code_mapping.get(tencent_code)
+                    if not pure_code:
+                        continue
+
+                    pe = _num(parts[28]) if len(parts) > 28 else None
+                    pb_val = _num(parts[29]) if len(parts) > 29 else None
+                    total_cap = _num(parts[44]) if len(parts) > 44 else None
+                    circ_cap = _num(parts[45]) if len(parts) > 45 else None
+
+                    if total_cap is not None:
+                        total_cap = total_cap * 100000000
+                    if circ_cap is not None:
+                        circ_cap = circ_cap * 100000000
+
+                    result[pure_code] = (pe, pb_val, total_cap, circ_cap)
+            except Exception as e:
+                logger.warning(f"腾讯接口批量请求失败: {str(e)[:50]}")
+                break
+
+        logger.info(f"从腾讯接口获取到 {len(result)} 条估值数据")
+        return result
     except Exception as e:
-        logger.warning(f"stock_zh_valuation_comparison_em failed for PE/PB: {str(e)[:50]}")
-    
-    try:
-        df = ak.stock_zh_a_spot_em()
-        if df is not None and not df.empty:
-            for _, row in df.iterrows():
-                raw_code = row.get("代码")
-                if raw_code is None or (isinstance(raw_code, float) and pd.isna(raw_code)):
-                    continue
-                code = _remove_market_prefix(raw_code)
-                if code in filled:
-                    continue
-                pe = _num(row.get("市盈率-动态")) or _num(row.get("市盈率"))
-                pb_val = _num(row.get("市净率"))
-                if pe is not None or pb_val is not None:
-                    filled[code] = (pe, pb_val)
-            logger.info(f"Got {len(filled)} PE/PB records from stock_zh_a_spot_em")
-            return filled
-    except Exception as e:
-        logger.warning(f"stock_zh_a_spot_em failed for PE/PB: {str(e)[:50]}")
-    
-    logger.info(f"PE/PB data fetch complete, got {len(filled)} records")
-    return filled
+        logger.warning(f"腾讯接口调用失败: {str(e)[:50]}")
+
+    return result
 
 
 async def _load_dividend_yield_map() -> dict[str, tuple[float | None, str | None, bool]]:
@@ -460,35 +332,45 @@ async def _load_dividend_yield_map() -> dict[str, tuple[float | None, str | None
     code -> (dividend amount per share, report period YYYYMMDD or None, is_direct_yield)
     
     is_direct_yield: False = value is dividend amount per share (need calculation)
+    
+    只累加最近365天内除权除息的实施分红，避免累加全部历史数据导致股息率虚高
     """
+    from datetime import timedelta
+
+    one_year_ago_str = (datetime.now() - timedelta(days=365)).strftime('%Y%m%d')
     filled: dict[str, tuple[float | None, str | None, bool]] = {}
     
     async with async_session_maker() as session:
-        # 从新表 AShareDividendDetail 获取最近一年的分红数据
+        # 从新表 AShareDividendDetail 获取分红数据（仅实施状态、有派息、有除权除息日）
         result = await session.execute(
             AShareDividendDetail.__table__.select()
             .where(AShareDividendDetail.dividend.isnot(None))
             .where(AShareDividendDetail.dividend > 0)
             .where(AShareDividendDetail.progress == '实施')
+            .where(AShareDividendDetail.ex_dividend_date.isnot(None))
         )
         
-        # 按股票代码分组，计算最近一年的总分红
+        # 按股票代码分组，只累加最近365天内除权除息的实施分红
         dividend_by_code: dict[str, float] = {}
         latest_date_by_code: dict[str, str] = {}
+        skipped_out_of_range = 0
         
         for row in result:
+            ex_date = row.ex_dividend_date
+            if ex_date is None or ex_date < one_year_ago_str:
+                skipped_out_of_range += 1
+                continue
+            
             code = row.code
             dividend = float(row.dividend) if row.dividend else 0
             
-            # 累加分红金额
             if code not in dividend_by_code:
                 dividend_by_code[code] = 0
-                latest_date_by_code[code] = row.announcement_date
+                latest_date_by_code[code] = ex_date
             else:
                 dividend_by_code[code] += dividend
-                # 更新最新日期
-                if row.announcement_date and row.announcement_date > latest_date_by_code.get(code, ''):
-                    latest_date_by_code[code] = row.announcement_date
+                if ex_date and ex_date > latest_date_by_code.get(code, ''):
+                    latest_date_by_code[code] = ex_date
         
         # 转换为每股分红
         for code, total_dividend in dividend_by_code.items():
@@ -496,17 +378,21 @@ async def _load_dividend_yield_map() -> dict[str, tuple[float | None, str | None
                 dividend_per_share = total_dividend / 10.0  # 每10股分红转每股
                 filled[code] = (dividend_per_share, latest_date_by_code.get(code), False)
     
-    logger.info(f"Loaded {len(filled)} dividend records from AShareDividendDetail")
+    logger.info(
+        f"Loaded {len(filled)} dividend records from AShareDividendDetail "
+        f"(skipped {skipped_out_of_range} records out of 365-day range)"
+    )
     return filled
 
 
 def _rows_from_dataframe(
     df: pd.DataFrame,
     dividend_by_code: dict[str, tuple[float | None, str | None, bool]],
-    pe_pb_by_code: dict[str, tuple[float | None, float | None]] | None = None,
-    market_cap_by_code: dict[str, tuple[float | None, float | None]] | None = None,
+    tencent_valuation: dict[str, tuple[float | None, float | None, float | None, float | None]] | None = None,
 ) -> list[AShareStockBasic]:
-    """Parse DataFrame and build list of AShareStockBasic records"""
+    """解析DataFrame，合并各数据源构建AShareStockBasic记录列表
+    tencent_valuation: code -> (pe, pb, total_market_cap, circulating_market_cap)
+    """
     rows: list[AShareStockBasic] = []
     for r in df.to_dict(orient="records"):
         raw_code = r.get("代码")
@@ -518,37 +404,32 @@ def _rows_from_dataframe(
             name = ""
         else:
             name = str(name).strip()[:64]
-        
+
         latest_price = _num(r.get("最新价"))
-        
+
+        pe_dynamic = None
+        pb_val = None
         total_market_cap = _num(r.get("总市值"))
         circulating_market_cap = _num(r.get("流通市值"))
-        
-        if market_cap_by_code:
-            cap_pair = market_cap_by_code.get(code)
-            if cap_pair:
-                cap_total, cap_circ = cap_pair
+
+        if tencent_valuation:
+            valuation = tencent_valuation.get(code)
+            if valuation:
+                pe_dynamic, pb_val, cap_total, cap_circ = valuation
                 if cap_total is not None:
                     total_market_cap = cap_total
                 if cap_circ is not None:
                     circulating_market_cap = cap_circ
-        
+
         dividend_yield = None
         div_as_of = None
-        
+
         div_triple = dividend_by_code.get(code, (None, None, False))
         if div_triple[0] is not None and latest_price is not None and latest_price > 0:
             dividend_yield = (div_triple[0] / latest_price) * 100
             dividend_yield = _validate_dividend_yield(dividend_yield)
             div_as_of = div_triple[1]
-        
-        pe_dynamic = None
-        pb_val = None
-        if pe_pb_by_code:
-            pe_pb_pair = pe_pb_by_code.get(code)
-            if pe_pb_pair:
-                pe_dynamic, pb_val = pe_pb_pair
-        
+
         if pe_dynamic is None:
             pe_dynamic = _num(r.get("市盈率-动态")) or _num(r.get("市盈率"))
         if pb_val is None:
@@ -575,8 +456,8 @@ def _rows_from_dataframe(
                 turnover_rate=_num(r.get("换手率")),
                 pe_dynamic=pe_dynamic,
                 pb=pb_val,
-                total_market_cap=_num(r.get("总市值")),
-                circulating_market_cap=_num(r.get("流通市值")),
+                total_market_cap=total_market_cap,
+                circulating_market_cap=circulating_market_cap,
                 rise_speed=_num(r.get("涨速")),
                 change_5min=_num(r.get("5分钟涨跌")),
                 change_60d=_num(r.get("60日涨跌幅")),
@@ -594,41 +475,72 @@ async def sync_a_share_stock_basic_once() -> int:
     """
     max_retries = 5
     base_delay = 5
+    batch_id: str | None = None
+    start_time = datetime.now()
+
+    logger.info("=" * 60)
+    logger.info(f"【A股基本信息同步任务】开始执行")
+    logger.info(f"【当前时间】{start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    running_progress = await get_sync_progress(TASK_NAME)
+    if running_progress:
+        _, _, existing_batch_id = running_progress
+        logger.warning(f"【跳过】发现正在运行的同步任务，batch_id: {existing_batch_id}")
+        logger.info("=" * 60)
+        return 0
 
     for attempt in range(max_retries):
         try:
             if attempt > 0:
                 delay = base_delay * (2 ** attempt) + random.uniform(0, 3)
-                logger.info(f"========== 重试第 {attempt + 1}/{max_retries} 次 ==========")
-                logger.info(f"重试原因: 网络请求失败或数据获取异常")
-                logger.info(f"等待 {delay:.1f} 秒后进行第 {attempt + 1} 次尝试...")
+                logger.info(f"【重试】第 {attempt + 1}/{max_retries} 次尝试")
+                logger.info(f"【等待】{delay:.1f} 秒后继续...")
                 await asyncio.sleep(delay)
             else:
                 await asyncio.sleep(random.uniform(1, 3))
 
+            logger.info("【步骤1/4】开始加载A股实时行情数据...")
             df: pd.DataFrame = await asyncio.to_thread(_load_spot_dataframe_sync)
-            dividend_map: dict[str, tuple[float | None, str | None, bool]] = await _load_dividend_yield_map()
-            pe_pb_map: dict[str, tuple[float | None, float | None]] = await asyncio.to_thread(
-                _load_pe_pb_map_sync
-            )
-            market_cap_map: dict[str, tuple[float | None, float | None]] = await asyncio.to_thread(
-                _load_market_cap_map_sync
-            )
             if df is None or df.empty:
-                logger.warning("A-share market data empty, skip storage")
+                logger.warning("【数据为空】A股行情数据为空，跳过本次同步")
+                logger.info("=" * 60)
                 return 0
-            records = _rows_from_dataframe(df, dividend_map, pe_pb_map, market_cap_map)
-            if not records:
-                logger.warning("No valid records after parsing, skip storage")
-                return 0
+            logger.info(f"【步骤1/4完成】成功加载 {len(df)} 条A股行情数据")
 
+            logger.info("【步骤2/4】开始加载分红数据...")
+            dividend_map: dict[str, tuple[float | None, str | None, bool]] = await _load_dividend_yield_map()
+            logger.info(f"【步骤2/4完成】成功加载 {len(dividend_map)} 条分红记录")
+
+            logger.info("【步骤3/4】开始加载腾讯估值数据...")
+            tencent_valuation_map: dict[str, tuple[float | None, float | None, float | None, float | None]] = await asyncio.to_thread(
+                _load_tencent_valuation_map_sync
+            )
+            logger.info(f"【步骤3/4完成】成功加载 {len(tencent_valuation_map)} 条估值数据")
+
+            logger.info("【步骤4/4】开始解析数据并写入数据库...")
+            records = _rows_from_dataframe(df, dividend_map, tencent_valuation_map)
+            if not records:
+                logger.warning("【解析失败】没有有效的记录，跳过存储")
+                logger.info("=" * 60)
+                return 0
+            logger.info(f"【解析完成】成功解析 {len(records)} 条有效记录")
+
+            batch_id = await create_sync_progress(TASK_NAME, len(records))
+            logger.info(f"【进度记录】已创建同步进度记录，batch_id: {batch_id}")
+
+            logger.info(f"【入库开始】准备将 {len(records)} 条记录写入数据库，分批次处理...")
             async with async_session_maker() as session:
                 chunk_size = 500
+                total_batches = (len(records) + chunk_size - 1) // chunk_size
+                processed_count = 0
+                
                 for i in range(0, len(records), chunk_size):
                     chunk = records[i:i + chunk_size]
+                    batch_num = i // chunk_size + 1
+                    logger.info(f"【批次处理】正在处理第 {batch_num}/{total_batches} 批次，共 {len(chunk)} 条记录")
+                    
+                    precise_count = 0
                     for record in chunk:
-                        logger.info(f"Processing stock {record.code} ({record.name})...")
-                        
                         current_dividend_yield = record.dividend_yield
                         
                         need_precise_calc = False
@@ -640,13 +552,12 @@ async def sync_a_share_stock_basic_once() -> int:
                                 need_precise_calc = True
                         
                         if need_precise_calc and record.latest_price and record.latest_price > 0:
-                            logger.info(f"Getting precise dividend for {record.code} ({record.name})...")
                             precise_div = await asyncio.to_thread(_calculate_recent_year_dividend, record.code)
                             if precise_div is not None:
                                 latest_price_float = float(record.latest_price) if hasattr(record.latest_price, '__float__') else float(record.latest_price)
                                 current_dividend_yield = (precise_div / latest_price_float) * 100
                                 current_dividend_yield = _validate_dividend_yield(current_dividend_yield)
-                                logger.info(f"Precise dividend yield for {record.code}: {current_dividend_yield:.2f}%")
+                                precise_count += 1
                         
                         insert_stmt = mysql_insert(AShareStockBasic).values(
                             code=record.code,
@@ -703,18 +614,37 @@ async def sync_a_share_stock_basic_once() -> int:
                             updated_at=func.now(),
                         )
                         await session.execute(on_conflict_stmt)
-                        logger.info(f"Stock {record.code} ({record.name}) upsert successful")
+                        processed_count += 1
+                    
                     await session.commit()
-                    logger.info(f"Submitted batch {i // chunk_size + 1}, {min(i + chunk_size, len(records))}/{len(records)} records")
+                    logger.info(f"【批次完成】第 {batch_num}/{total_batches} 批次提交成功，累计处理 {processed_count}/{len(records)} 条")
+                    if precise_count > 0:
+                        logger.info(f"【精确计算】本批次有 {precise_count} 只股票进行了精确股息率计算")
 
-            logger.info("A-share basic info synced, total %s records", len(records))
+            if batch_id:
+                await complete_sync_progress(TASK_NAME, batch_id)
+                logger.info(f"【进度更新】同步进度已标记为完成")
+
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            logger.info(f"【任务完成】A股基本信息同步成功！")
+            logger.info(f"【处理结果】共处理 {len(records)} 条记录")
+            logger.info(f"【耗时统计】总耗时 {duration:.2f} 秒")
+            logger.info(f"【结束时间】{end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info("=" * 60)
+            
             return len(records)
         except Exception as e:
-            logger.error(f"---------- A-share basic info sync 第 {attempt + 1} 次尝试失败 ----------")
-            logger.error(f"失败原因: {str(e)[:200]}")
-            logger.error(f"剩余重试次数: {max_retries - attempt - 1}")
+            if batch_id:
+                await fail_sync_progress(TASK_NAME, batch_id)
+                logger.info(f"【进度更新】同步进度已标记为失败")
+            
+            logger.error(f"【任务失败】第 {attempt + 1} 次尝试失败")
+            logger.error(f"【失败原因】{str(e)[:200]}")
+            logger.error(f"【剩余重试】{max_retries - attempt - 1} 次")
             if attempt == max_retries - 1:
-                logger.exception("========== A-share basic info sync 所有重试均失败，放弃同步 ==========")
+                logger.error("【放弃同步】所有重试均失败，任务终止")
+                logger.info("=" * 60)
                 return 0
 
 
@@ -723,16 +653,26 @@ async def run_a_share_stock_basic_sync_loop(interval_seconds: int) -> None:
     Run A-share basic info sync periodically
     :param interval_seconds: Sync interval in seconds
     """
-    logger.info("Starting A-share basic info sync loop, interval: %ds", interval_seconds)
+    interval_minutes = interval_seconds / 60
+    logger.info("=" * 60)
+    logger.info(f"【定时任务启动】A股基本信息同步循环")
+    logger.info(f"【同步间隔】{interval_seconds} 秒 ({interval_minutes:.1f} 分钟)")
+    logger.info("=" * 60)
     
     while True:
         try:
-            logger.info("=== Starting A-share basic info sync #%d ===", _get_sync_count())
+            sync_num = _get_sync_count()
+            logger.info(f"【第 {sync_num} 次同步】即将开始...")
             count = await sync_a_share_stock_basic_once()
-            logger.info("A-share basic info sync completed, %d records processed", count)
+            
+            next_run = datetime.now() + timedelta(seconds=interval_seconds)
+            logger.info(f"【下次执行】预计 {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.info("-" * 60)
         except Exception as e:
-            logger.error(f"A-share basic info sync loop error: {str(e)[:200]}")
+            logger.error(f"【循环异常】{str(e)[:200]}")
+            logger.info("-" * 60)
         
+        logger.info(f"【等待中】下次同步将在 {interval_minutes:.1f} 分钟后进行...")
         await asyncio.sleep(interval_seconds)
 
 
